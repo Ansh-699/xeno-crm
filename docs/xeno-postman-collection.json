@@ -1,0 +1,632 @@
+{
+  "info": {
+    "name": "Xeno CRM — Full API",
+    "_postman_id": "xeno-crm-2024",
+    "description": "Complete API collection for Xeno CRM. Run requests top-to-bottom for a full flow test.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3001" },
+    { "key": "channel_url", "value": "http://localhost:4000" },
+    { "key": "segment_id", "value": "" },
+    { "key": "campaign_id", "value": "" },
+    { "key": "run_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "00 — Health Checks",
+      "item": [
+        {
+          "name": "Backend Health",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Backend is healthy', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('ok');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Channel Service Health",
+          "request": {
+            "method": "GET",
+            "url": "{{channel_url}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Channel service is healthy', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01 — Customers",
+      "item": [
+        {
+          "name": "List Customers",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/customers?limit=10&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "customers"],
+              "query": [
+                { "key": "limit", "value": "10" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns customers array', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const data = pm.response.json();",
+                  "  pm.expect(data.customers).to.be.an('array');",
+                  "  pm.expect(data.total).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search Customers",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/customers?search=Mumbai&limit=5",
+              "host": ["{{base_url}}"],
+              "path": ["api", "customers"],
+              "query": [
+                { "key": "search", "value": "Mumbai" },
+                { "key": "limit", "value": "5" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Bulk Create Customers",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/customers/bulk",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  {\n    \"name\": \"Test User 1\",\n    \"email\": \"test1@example.com\",\n    \"phone\": \"+919876543210\",\n    \"city\": \"Delhi\",\n    \"optedOut\": false\n  },\n  {\n    \"name\": \"Test User 2\",\n    \"email\": \"test2@example.com\",\n    \"phone\": \"+919876543211\",\n    \"city\": \"Mumbai\",\n    \"optedOut\": false\n  }\n]"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Bulk create succeeds', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  pm.expect(pm.response.json().count).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Import CSV (form-data)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/customers/import",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "Select a CSV file with columns: name,email,phone,city,optedOut"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 — Segments",
+      "item": [
+        {
+          "name": "List Segments",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/segments"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns segments', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json()).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Segment (Mumbai high-spenders)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/segments",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Mumbai High Spenders\",\n  \"description\": \"Customers in Mumbai with orders over 5000\",\n  \"filters\": {\n    \"operator\": \"AND\",\n    \"conditions\": [\n      { \"field\": \"city\", \"op\": \"eq\", \"value\": \"Mumbai\" },\n      { \"field\": \"orders.amount\", \"op\": \"gt\", \"value\": 5000 }\n    ]\n  },\n  \"aiGenerated\": false\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Segment created', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const seg = pm.response.json();",
+                  "  pm.expect(seg.id).to.be.a('string');",
+                  "  pm.collectionVariables.set('segment_id', seg.id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Segment by ID",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/segments/{{segment_id}}"
+          }
+        },
+        {
+          "name": "Preview Segment Members",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/segments/{{segment_id}}/preview?limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "segments", "{{segment_id}}", "preview"],
+              "query": [
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Preview returns customers', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const data = pm.response.json();",
+                  "  pm.expect(data.customers).to.be.an('array');",
+                  "  pm.expect(data.total).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 — Campaigns",
+      "item": [
+        {
+          "name": "List Campaigns",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/campaigns"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns campaigns', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json()).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Launch Campaign (single channel SMS)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/campaigns/launch",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"segmentId\": \"{{segment_id}}\",\n  \"name\": \"Postman Test Campaign\",\n  \"channel\": \"sms\",\n  \"messages\": {\n    \"sms\": \"Hi {{name}}, your favourite {{top_product}} is on sale! 20% off today only.\"\n  },\n  \"launchToken\": \"postman-test-{{$randomUUID}}\",\n  \"goal\": \"Re-engagement test\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Campaign launched', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const data = pm.response.json();",
+                  "  pm.expect(data.campaignId).to.be.a('string');",
+                  "  pm.collectionVariables.set('campaign_id', data.campaignId);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Campaign by ID",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/campaigns/{{campaign_id}}"
+          }
+        },
+        {
+          "name": "Campaign Live Stats (SSE — use browser/curl)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/campaigns/{{campaign_id}}/live",
+            "description": "This is an SSE endpoint. In Postman it will timeout. Test with: curl -N http://localhost:3001/api/campaigns/<id>/live"
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 — Receipts (Channel Service callbacks)",
+      "item": [
+        {
+          "name": "Post Receipt — sent",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/receipts",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"communicationId\": \"REPLACE_WITH_REAL_COMM_ID\",\n  \"status\": \"sent\",\n  \"timestamp\": \"2024-01-15T10:00:00Z\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Receipt accepted', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Post Receipt — delivered",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/receipts",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"communicationId\": \"REPLACE_WITH_REAL_COMM_ID\",\n  \"status\": \"delivered\",\n  \"timestamp\": \"2024-01-15T10:01:00Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Post Receipt — failed",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/receipts",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"communicationId\": \"REPLACE_WITH_REAL_COMM_ID\",\n  \"status\": \"failed\",\n  \"timestamp\": \"2024-01-15T10:02:00Z\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 — AI Agent",
+      "item": [
+        {
+          "name": "Agent — Simple Chat (legacy)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/agent",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"How many customers do we have in Pune?\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Agent responds', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const data = pm.response.json();",
+                  "  pm.expect(data.runId).to.be.a('string');",
+                  "  pm.expect(data.response).to.be.a('string');",
+                  "  pm.collectionVariables.set('run_id', data.runId);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Agent — Streaming Run (new message)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/agent/run",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Create a segment of customers in Delhi who have ordered more than 3 times\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Returns NDJSON stream. Each line is a JSON event. Postman will show raw text — parse each line as JSON."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Stream started', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const firstLine = pm.response.text().split('\\n')[0];",
+                  "  const event = JSON.parse(firstLine);",
+                  "  pm.expect(event.type).to.eql('run_started');",
+                  "  pm.collectionVariables.set('run_id', event.runId);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Agent — Resume with approval",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/agent/run",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"runId\": \"{{run_id}}\",\n  \"approved\": true\n}"
+            },
+            "description": "Use this after receiving a confirmation_required event. Set approved:true to execute, false to reject."
+          }
+        },
+        {
+          "name": "Agent — Resume with rejection",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/agent/run",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"runId\": \"{{run_id}}\",\n  \"approved\": false\n}"
+            }
+          }
+        },
+        {
+          "name": "Agent — Continue conversation",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/agent/run",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"runId\": \"{{run_id}}\",\n  \"message\": \"Now draft an SMS message for this segment about a 20% off sale\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Agent — List Runs",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/agent/runs"
+          }
+        },
+        {
+          "name": "Agent — Get Run Details",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/agent/runs/{{run_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 — Channel Service Direct",
+      "item": [
+        {
+          "name": "Send Message (direct)",
+          "request": {
+            "method": "POST",
+            "url": "{{channel_url}}/send",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"communicationId\": \"test-comm-001\",\n  \"channel\": \"sms\",\n  \"destination\": \"+919876543210\",\n  \"content\": \"Hello from Xeno CRM test!\",\n  \"callbackUrl\": \"http://localhost:3001/api/receipts\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Accepted for delivery', () => {",
+                  "  pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07 — E2E Flow (run in order)",
+      "description": "Complete end-to-end: create segment → launch campaign → check stats",
+      "item": [
+        {
+          "name": "1. Create Segment for E2E",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/segments",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"E2E Test Segment\",\n  \"description\": \"All Pune customers\",\n  \"filters\": {\n    \"operator\": \"AND\",\n    \"conditions\": [\n      { \"field\": \"city\", \"op\": \"eq\", \"value\": \"Pune\" }\n    ]\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const seg = pm.response.json();",
+                  "pm.collectionVariables.set('segment_id', seg.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Launch Campaign",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/campaigns/launch",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"segmentId\": \"{{segment_id}}\",\n  \"name\": \"E2E Pune SMS\",\n  \"channel\": \"sms\",\n  \"messages\": {\n    \"sms\": \"Hi {{name}}, check out our new arrivals! Your favourite {{top_product}} is back in stock.\"\n  },\n  \"launchToken\": \"e2e-{{$randomUUID}}\",\n  \"goal\": \"End-to-end test\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json();",
+                  "pm.collectionVariables.set('campaign_id', data.campaignId);",
+                  "pm.test('Campaign launched with recipients', () => {",
+                  "  pm.expect(data.campaignId).to.be.a('string');",
+                  "  pm.expect(data.totalRecipients).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Check Campaign Status (wait 5s)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/campaigns/{{campaign_id}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Wait 5 seconds for channel service to process",
+                  "setTimeout(() => {}, 5000);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Campaign exists', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const c = pm.response.json();",
+                  "  pm.expect(['queued','sending','completed']).to.include(c.status);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. AI Agent — Analyze Performance",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/agent",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Analyze the performance of the most recent campaign\"\n}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

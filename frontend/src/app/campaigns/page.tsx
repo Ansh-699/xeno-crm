@@ -1,0 +1,369 @@
+"use client";
+
+import { useEffect, useState, useRef } from "react";
+import { apiFetch, sseUrl, apiStream } from "@/lib/api";
+import { Megaphone, Radio, BarChart3, Clock, Sparkles, Loader2, ArrowRight } from "lucide-react";
+
+interface Campaign {
+  id: string;
+  name: string;
+  status: string;
+  channel: string;
+  channelStrategy: string;
+  totalRecipients: number;
+  goal: string | null;
+  aiBrief: string | null;
+  createdAt: string;
+  segment: { name: string } | null;
+  _count: { communications: number };
+}
+
+export default function CampaignsPage() {
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadCampaigns();
+  }, []);
+
+  async function loadCampaigns() {
+    try {
+      const data = await apiFetch<Campaign[]>("/api/campaigns");
+      setCampaigns(data);
+    } catch {
+      setCampaigns([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (loading) return <div className="text-zinc-500">Loading...</div>;
+
+  return (
+    <div>
+      <h1 className="text-2xl font-bold mb-6">Campaigns</h1>
+
+      {campaigns.length === 0 ? (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-8 text-center">
+          <Megaphone className="h-8 w-8 text-zinc-600 mx-auto mb-3" />
+          <p className="text-zinc-400">No campaigns launched yet</p>
+          <p className="text-sm text-zinc-600 mt-1">Use the AI Agent to create and launch campaigns</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {campaigns.map((c) => (
+            <div key={c.id}>
+              <div
+                className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 cursor-pointer hover:border-zinc-700 transition-colors"
+                onClick={() => setSelectedId(selectedId === c.id ? null : c.id)}
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold">{c.name}</h3>
+                      <StatusBadge status={c.status} />
+                    </div>
+                    <p className="text-sm text-zinc-400 mt-1">
+                      {c.segment?.name || "—"} · {c.channel || "multi"} · {c.totalRecipients || c._count.communications} recipients
+                    </p>
+                    {c.goal && <p className="text-xs text-zinc-500 mt-1">{c.goal}</p>}
+                  </div>
+                  <div className="text-right text-xs text-zinc-500">
+                    <div className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {new Date(c.createdAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {selectedId === c.id && (
+                <LiveStats campaignId={c.id} initialBrief={c.aiBrief} channel={c.channel} />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    completed: "bg-emerald-900/50 text-emerald-400",
+    sending: "bg-blue-900/50 text-blue-400",
+    queued: "bg-amber-900/50 text-amber-400",
+    failed: "bg-red-900/50 text-red-400",
+  };
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded font-medium ${styles[status] || "bg-zinc-800 text-zinc-400"}`}>
+      {status}
+    </span>
+  );
+}
+
+function LiveStats({
+  campaignId,
+  initialBrief,
+  channel,
+}: {
+  campaignId: string;
+  initialBrief: string | null;
+  channel: string | null;
+}) {
+  const [stats, setStats] = useState<Record<string, number>>({});
+  const [meta, setMeta] = useState<{ status?: string; totalRecipients?: number }>({});
+  const [aiBrief, setAiBrief] = useState<string | null>(initialBrief);
+  const [generatingBrief, setGeneratingBrief] = useState(false);
+  const [nextStep, setNextStep] = useState<string | null>(null);
+  const [loadingNextStep, setLoadingNextStep] = useState(false);
+  const esRef = useRef<EventSource | null>(null);
+
+  // SMS only supports delivery — no opened/read/clicked events
+  const isSmsOnly = channel?.toLowerCase() === "sms";
+
+  useEffect(() => {
+    const url = sseUrl(`/api/campaigns/${campaignId}/live`);
+    const es = new EventSource(url);
+    esRef.current = es;
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "snapshot") {
+          setStats(data.stats || {});
+        } else if (data.type === "meta") {
+          setMeta(data);
+        } else if (data.type === "delta") {
+          setStats((prev) => {
+            const next = { ...prev };
+            next[data.event] = (next[data.event] || 0) + 1;
+            return next;
+          });
+        } else if (data.type === "complete") {
+          // Trigger brief update after a short delay
+          setTimeout(async () => {
+            try {
+              const updatedCampaign = await apiFetch<Campaign>(`/api/campaigns/${campaignId}`);
+              setAiBrief(updatedCampaign.aiBrief);
+            } catch {}
+          }, 3000);
+        }
+      } catch {}
+    };
+
+    return () => {
+      es.close();
+    };
+  }, [campaignId]);
+
+  async function handleManualBrief() {
+    setGeneratingBrief(true);
+    try {
+      const prompt = `Analyze campaign ${campaignId} and write a performance brief. Only use the analyze_performance tool.`;
+      const res = await apiStream("/api/agent/run", { message: prompt });
+      if (!res.ok) throw new Error("Failed to generate");
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line);
+            if (event.type === "tool_result" && event.toolResult?.name === "analyze_performance") {
+              const output = JSON.parse(event.toolResult.output);
+              if (output.brief) {
+                setAiBrief(output.brief);
+              }
+            }
+          } catch {}
+        }
+      }
+
+      // Final fallback fetch
+      const updatedCampaign = await apiFetch<Campaign>(`/api/campaigns/${campaignId}`);
+      setAiBrief(updatedCampaign.aiBrief);
+    } catch (err: any) {
+      alert("Failed to generate performance brief: " + err.message);
+    } finally {
+      setGeneratingBrief(false);
+    }
+  }
+
+  async function handleGetNextSteps() {
+    setLoadingNextStep(true);
+    setNextStep(null);
+    try {
+      const prompt = `Based on the performance metrics of campaign ${campaignId}, what is the single next marketing action I should take? Provide a very concise recommendation.`;
+      const res = await apiStream("/api/agent/run", { message: prompt });
+      if (!res.ok) throw new Error("Failed");
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let fullText = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line);
+            if (event.type === "text" && event.text) {
+              fullText += event.text;
+              setNextStep(fullText);
+            }
+          } catch {}
+        }
+      }
+    } catch {
+      setNextStep("Failed to generate recommendations. Please try again.");
+    } finally {
+      setLoadingNextStep(false);
+    }
+  }
+
+  const sent = Number(stats.sent || 0);
+  const delivered = Number(stats.delivered || 0);
+  const failed = Number(stats.failed || 0);
+  const opened = Number(stats.opened || 0);
+  const read = Number(stats.read || 0);
+  const total = meta.totalRecipients || sent || 1;
+  const deliveryRate = sent > 0 ? Math.round((delivered / sent) * 100) : 0;
+
+  return (
+    <div className="mt-2 rounded-xl border border-zinc-800 bg-zinc-950 p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <Radio className="h-4 w-4 text-emerald-400" />
+        <span className="text-sm font-medium">Live Delivery Stats</span>
+        {isSmsOnly && (
+          <span className="text-[10px] text-zinc-655 ml-auto bg-amber-950/20 text-amber-500 px-2 py-0.5 rounded border border-amber-900/30">
+            SMS — delivery tracking only
+          </span>
+        )}
+      </div>
+
+      <div className={`grid gap-4 ${isSmsOnly ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4"}`}>
+        <StatCard label="Sent" value={sent} color="text-blue-400" />
+        <StatCard label="Delivered" value={delivered} color="text-emerald-400" />
+        <StatCard label="Failed" value={failed} color="text-red-400" />
+        {!isSmsOnly && (
+          <StatCard label="Opened" value={opened + read} color="text-amber-400" />
+        )}
+      </div>
+
+      {/* Progress bar */}
+      <div>
+        <div className="flex items-center justify-between text-xs text-zinc-500 mb-1">
+          <span>Delivery Progress</span>
+          <span>{deliveryRate}% delivered</span>
+        </div>
+        <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
+          <div className="h-full flex">
+            <div
+              className="bg-emerald-500 transition-all duration-500"
+              style={{ width: `${(delivered / total) * 100}%` }}
+            />
+            <div
+              className="bg-red-500 transition-all duration-500"
+              style={{ width: `${(failed / total) * 100}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* AI Brief and Recommendations Section */}
+      <div className="border-t border-zinc-800 pt-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-3.5 w-3.5 text-violet-400" />
+            <span className="text-xs font-medium text-zinc-400">AI Performance Brief & Narrative</span>
+          </div>
+          {!aiBrief && (
+            <button
+              onClick={handleManualBrief}
+              disabled={generatingBrief}
+              className="flex items-center gap-1 text-[10px] px-2 py-1 rounded bg-violet-600 text-white font-medium hover:bg-violet-500 disabled:opacity-50 transition-colors"
+            >
+              {generatingBrief ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-3 w-3" />
+                  Generate Brief
+                </>
+              )}
+            </button>
+          )}
+        </div>
+
+        {aiBrief ? (
+          <p className="text-xs text-zinc-400 whitespace-pre-wrap leading-relaxed bg-zinc-900/40 p-3 rounded-lg border border-zinc-800/40">
+            {aiBrief}
+          </p>
+        ) : (
+          <p className="text-xs text-zinc-650 italic">AI performance brief will auto-generate once campaign is complete.</p>
+        )}
+
+        {/* Proactive Next Steps */}
+        <div className="bg-violet-950/10 border border-violet-900/20 rounded-lg p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase font-bold text-violet-400 flex items-center gap-1">
+              <Sparkles className="h-3 w-3" />
+              AI Recommendation
+            </span>
+            {!nextStep && !loadingNextStep && (
+              <button
+                onClick={handleGetNextSteps}
+                className="text-[10px] text-violet-400 hover:text-violet-300 font-medium inline-flex items-center gap-0.5"
+              >
+                Get Next Action Step
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          {loadingNextStep && (
+            <div className="text-xs text-zinc-500 flex items-center gap-1.5 py-1">
+              <Loader2 className="h-3 w-3 animate-spin text-violet-400" />
+              Formulating next steps based on campaign outcomes...
+            </div>
+          )}
+          {nextStep && (
+            <p className="text-xs text-zinc-300 leading-relaxed font-medium">
+              {nextStep}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="rounded-lg bg-zinc-900 border border-zinc-800 p-3 text-center">
+      <p className={`text-xl font-semibold ${color}`}>{value}</p>
+      <p className="text-xs text-zinc-505 mt-0.5">{label}</p>
+    </div>
+  );
+}

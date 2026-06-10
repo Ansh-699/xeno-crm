@@ -1,0 +1,102 @@
+services:
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: xeno
+      POSTGRES_USER: xeno
+      POSTGRES_PASSWORD: xeno
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xeno"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  channel-service:
+    build: ./channel-service
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: "4000"
+      CALLBACK_BASE_URL: "http://backend:3001"
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: "postgresql://xeno:xeno@postgres:5432/xeno?schema=public"
+      REDIS_URL: "redis://redis:6379"
+      CHANNEL_SERVICE_URL: "http://channel-service:4000"
+      PORT: "3001"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      channel-service:
+        condition: service_started
+
+  migrate:
+    build: ./backend
+    environment:
+      DATABASE_URL: "postgresql://xeno:xeno@postgres:5432/xeno?schema=public"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c "npx prisma migrate deploy && npx tsx prisma/seed.ts"
+    restart: "no"
+
+  poller:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgresql://xeno:xeno@postgres:5432/xeno?schema=public"
+      REDIS_URL: "redis://redis:6379"
+      CHANNEL_SERVICE_URL: "http://channel-service:4000"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      channel-service:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    command: ["npx", "tsx", "src/worker/poller.ts"]
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: "http://localhost:3001"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  redisdata:

@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Customer {
+  id             String          @id @default(cuid())
+  name           String
+  email          String?         @unique
+  phone          String?
+  city           String?
+  optedOut       Boolean         @default(false)
+  attributes     Json            @default("{}")
+  createdAt      DateTime        @default(now())
+  orders         Order[]
+  communications Communication[]
+}
+
+model Order {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  amount     Float
+  products   Json
+  channel    String
+  orderedAt  DateTime
+
+  @@index([customerId])
+  @@index([orderedAt])
+}
+
+model Segment {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?
+  filters       Json
+  aiGenerated   Boolean  @default(false)
+  customerCount Int      @default(0)
+  campaigns     Campaign[]
+  createdAt     DateTime @default(now())
+}
+
+model Campaign {
+  id              String          @id @default(cuid())
+  name            String
+  segmentId       String
+  segment         Segment         @relation(fields: [segmentId], references: [id])
+  goal            String?
+  status          String          @default("draft")
+  messages        Json
+  channelStrategy String          @default("per_customer")
+  channel         String?
+  totalRecipients Int             @default(0)
+  launchToken     String?         @unique
+  aiBrief         String?
+  aiDecisionLog   Json?
+  createdAt       DateTime        @default(now())
+  completedAt     DateTime?
+  communications  Communication[]
+
+  @@index([status])
+}
+
+model Communication {
+  id           String      @id @default(cuid())
+  campaignId   String
+  campaign     Campaign    @relation(fields: [campaignId], references: [id])
+  customerId   String
+  customer     Customer    @relation(fields: [customerId], references: [id])
+  channel      String
+  destination  String
+  content      String
+  status       String      @default("pending")
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  openedAt     DateTime?
+  readAt       DateTime?
+  clickedAt    DateTime?
+  failedAt     DateTime?
+  events       CommEvent[]
+
+  @@index([campaignId])
+  @@index([customerId])
+}
+
+model CommEvent {
+  id              String        @id @default(cuid())
+  communicationId String
+  communication   Communication @relation(fields: [communicationId], references: [id])
+  status          String
+  timestamp       DateTime
+  createdAt       DateTime      @default(now())
+
+  @@unique([communicationId, status])
+  @@index([communicationId])
+}
+
+model Outbox {
+  id          BigInt   @id @default(autoincrement())
+  eventType   String
+  aggregateId String
+  campaignId  String
+  payload     Json
+  status      String   @default("PENDING")
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(5)
+  nextRetryAt DateTime @default(now())
+  processedAt DateTime?
+  error       String?
+  createdAt   DateTime @default(now())
+
+  @@index([nextRetryAt])
+  @@index([campaignId, status])
+}
+
+model AgentRun {
+  id          String   @id @default(cuid())
+  messages    Json
+  status      String   @default("active")
+  pendingTool Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ChannelDecision {
+  id         String   @id @default(cuid())
+  segmentId  String
+  customerId String
+  channel    String
+  reason     String
+  createdAt  DateTime @default(now())
+
+  @@unique([segmentId, customerId])
+  @@index([segmentId])
+}
