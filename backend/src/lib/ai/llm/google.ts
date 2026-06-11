@@ -1,7 +1,55 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { LLMProvider, LLMMessage, LLMResponse } from "./types";
 
-const DEFAULT_MODEL = "gemini-1.5-pro";
+const DEFAULT_MODEL = "gemini-2.5-flash";
+
+// Gemini's function-calling schema is a strict OpenAPI subset. It rejects JSON-Schema
+// keywords like `additionalProperties`, `$schema`, etc. Strip them recursively so the
+// same tool definitions work across Anthropic/OpenAI (which accept them) and Gemini.
+const UNSUPPORTED_SCHEMA_KEYS = new Set([
+  "additionalProperties",
+  "$schema",
+  "$id",
+  "definitions",
+  "patternProperties",
+  "default",
+]);
+
+// Schema-aware sanitizer. A JSON-Schema node is reduced to the OpenAPI subset Gemini
+// accepts: copy scalar keywords, recurse only into `properties` values and `items`
+// (never into the `properties` map container itself), and backfill a permissive type
+// so untyped slots don't 400 the request.
+const ALLOWED_SCALAR_KEYS = new Set(["type", "description", "enum", "format", "required"]);
+
+function sanitizeSchema(node: any): any {
+  if (!node || typeof node !== "object") return { type: "string" };
+
+  const out: any = {};
+
+  for (const key of ALLOWED_SCALAR_KEYS) {
+    if (node[key] !== undefined && !UNSUPPORTED_SCHEMA_KEYS.has(key)) {
+      out[key] = node[key];
+    }
+  }
+
+  if (node.properties && typeof node.properties === "object") {
+    out.type = "object";
+    out.properties = {};
+    for (const [propName, propSchema] of Object.entries(node.properties)) {
+      out.properties[propName] = sanitizeSchema(propSchema);
+    }
+  }
+
+  if (node.items) {
+    out.type = "array";
+    out.items = sanitizeSchema(node.items);
+  }
+
+  // Gemini requires every node to declare a type.
+  if (out.type === undefined) out.type = "string";
+
+  return out;
+}
 
 export function googleProvider(apiKey: string, modelName = DEFAULT_MODEL): LLMProvider {
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -15,7 +63,7 @@ export function googleProvider(apiKey: string, modelName = DEFAULT_MODEL): LLMPr
             functionDeclarations: tools.map((t) => ({
               name: t.name,
               description: t.description,
-              parameters: t.inputSchema as any,
+              parameters: sanitizeSchema(t.inputSchema) as any,
             })),
           },
         ],
@@ -26,8 +74,11 @@ export function googleProvider(apiKey: string, modelName = DEFAULT_MODEL): LLMPr
         parts: m.content.map((b) => {
           if (b.type === "text") return { text: b.text };
           if (b.type === "tool_use") return { functionCall: { name: b.name, args: b.input } };
-          // tool_result: key by function name (Gemini has no tool_call_id concept)
-          return { functionResponse: { name: b.toolUseId, response: { content: b.content } } };
+          // tool_result: Gemini requires the function name (not a synthetic call ID).
+          // Our synthetic IDs are formatted as "toolname-index", so strip the trailing
+          // "-N" to recover the original function name.
+          const fnName = b.toolUseId.replace(/-\d+$/, "");
+          return { functionResponse: { name: fnName, response: { content: b.content } } };
         }),
       }));
 

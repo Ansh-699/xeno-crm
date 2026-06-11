@@ -4,6 +4,7 @@ import multer from "multer";
 import { parse } from "csv-parse";
 import { Readable } from "stream";
 import prisma from "../lib/prisma";
+import { CustomerInput } from "../lib/ingest-schemas";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -130,31 +131,55 @@ router.get("/", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/customers/bulk — accepts JSON array of customer objects
+// POST /api/customers/bulk — accepts JSON array of customer objects.
+// Validates each row with zod; valid rows import, invalid rows are reported per-row.
+// Duplicate emails are skipped (not errored) via createMany skipDuplicates.
 router.post("/bulk", async (req: Request, res: Response) => {
   try {
-    const customers = req.body;
-
-    if (!Array.isArray(customers)) {
+    if (!Array.isArray(req.body)) {
       res.status(400).json({ error: "Request body must be an array" });
       return;
     }
 
-    const result = await prisma.customer.createMany({
-      data: customers.map((c: any) => ({
-        name: c.name,
-        email: c.email || null,
-        phone: c.phone || null,
-        city: c.city || null,
-        optedOut: c.optedOut || false,
-        attributes: c.attributes || {},
-      })),
-      skipDuplicates: true,
+    const valid: Prisma.CustomerCreateManyInput[] = [];
+    const errors: Array<{ row: number; error: string }> = [];
+
+    req.body.forEach((raw: unknown, i: number) => {
+      const parsed = CustomerInput.safeParse(raw);
+      if (parsed.success) {
+        valid.push({
+          name: parsed.data.name,
+          email: parsed.data.email ?? null,
+          phone: parsed.data.phone ?? null,
+          city: parsed.data.city ?? null,
+          optedOut: parsed.data.optedOut,
+          attributes: parsed.data.attributes,
+        });
+      } else {
+        errors.push({
+          row: i + 1,
+          error: parsed.error.issues
+            .map((e) => `${e.path.join(".")}: ${e.message}`)
+            .join("; "),
+        });
+      }
     });
 
-    res.status(201).json({ count: result.count });
+    let imported = 0;
+    if (valid.length) {
+      const result = await prisma.customer.createMany({ data: valid, skipDuplicates: true });
+      imported = result.count;
+    }
+
+    res.status(errors.length && !imported ? 400 : 201).json({
+      received: req.body.length,
+      imported,
+      skipped: valid.length - imported, // duplicate emails
+      rejected: errors.length,
+      errors,
+    });
   } catch (error) {
-    console.log("Error in POST /api/customers/bulk:", error);
+    console.error("Error in POST /api/customers/bulk:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

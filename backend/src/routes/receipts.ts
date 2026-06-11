@@ -93,12 +93,11 @@ router.post("/", async (req: Request, res: Response) => {
       // Enforce monotonicity in the DB so out-of-order callbacks can't regress status.
       // The timestamp column is injected as a raw identifier (tsField comes from a fixed
       // whitelist), while values stay bound params. 'opened'/'read' share rank 3.
-      const tsCol = Prisma.raw(`"${tsField ?? "updatedAt"}"`);
+      const tsCol = Prisma.raw(`"${tsField ?? "sentAt"}"`);
       await prisma.$executeRaw`
         UPDATE "Communication"
         SET status = ${status},
-            ${tsCol} = ${eventTimestamp},
-            "updatedAt" = NOW()
+            ${tsCol} = ${eventTimestamp}
         WHERE id = ${communicationId}
           AND status != 'failed'
           AND ${newRank} > (CASE status

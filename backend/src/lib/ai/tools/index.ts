@@ -1,16 +1,14 @@
-import type { ToolDefinition } from "../claude-provider";
 import prisma from "../../prisma";
 import { filtersToWhere, validateFilters } from "../../segments";
 import { launchCampaign } from "../../campaign-launcher";
 import { getCampaignStats } from "../../redis";
 import { createHash } from "crypto";
-import Anthropic from "@anthropic-ai/sdk";
 
 // Tools that require user confirmation before execution
 export const TOOLS_REQUIRING_CONFIRMATION = new Set(["launch_campaign"]);
 
 // Tool definitions — all 9
-export const toolDefinitions: ToolDefinition[] = [
+export const toolDefinitions: Array<{ name: string; description: string; input_schema: Record<string, any> }> = [
   {
     name: "describe_schema",
     description:
@@ -41,7 +39,11 @@ export const toolDefinitions: ToolDefinition[] = [
                 properties: {
                   field: { type: "string" },
                   op: { type: "string" },
-                  value: {},
+                  value: {
+                    type: "string",
+                    description:
+                      "Comparison value. Numbers and dates should be passed as strings (e.g. \"5000\", \"2025-01-01\"); they are coerced server-side.",
+                  },
                 },
                 required: ["field", "op", "value"],
               },
@@ -85,7 +87,11 @@ export const toolDefinitions: ToolDefinition[] = [
                 properties: {
                   field: { type: "string" },
                   op: { type: "string" },
-                  value: {},
+                  value: {
+                    type: "string",
+                    description:
+                      "Comparison value. Numbers and dates should be passed as strings (e.g. \"5000\", \"2025-01-01\"); they are coerced server-side.",
+                  },
                 },
                 required: ["field", "op", "value"],
               },
@@ -120,7 +126,11 @@ export const toolDefinitions: ToolDefinition[] = [
                 properties: {
                   field: { type: "string" },
                   op: { type: "string" },
-                  value: {},
+                  value: {
+                    type: "string",
+                    description:
+                      "Comparison value. Numbers and dates should be passed as strings (e.g. \"5000\", \"2025-01-01\"); they are coerced server-side.",
+                  },
                 },
                 required: ["field", "op", "value"],
               },
@@ -205,8 +215,13 @@ export const toolDefinitions: ToolDefinition[] = [
         messages: {
           type: "object",
           description:
-            "Object mapping channel name to message template string. For per_customer, include templates for each possible channel.",
-          additionalProperties: { type: "string" },
+            "Per-channel message templates. Provide a template for each channel you intend to use. Templates may include merge fields like {{name}}, {{top_product}}, {{city}}.",
+          properties: {
+            whatsapp: { type: "string", description: "WhatsApp message template" },
+            email: { type: "string", description: "Email message template" },
+            sms: { type: "string", description: "SMS message template" },
+            rcs: { type: "string", description: "RCS message template" },
+          },
         },
         goal: {
           type: "string",
@@ -317,31 +332,44 @@ function executeDescribeSchema(): Promise<string> {
       schema: {
         customer: {
           fields: {
-            name: { type: "string", operators: ["eq", "neq", "contains"] },
-            email: { type: "string", operators: ["eq", "neq", "contains"] },
-            phone: { type: "string", operators: ["eq", "neq", "contains"] },
-            city: { type: "string", operators: ["eq", "neq", "contains", "in"] },
+            name: { type: "string", operators: ["eq", "neq", "contains"], note: "Case-insensitive" },
+            email: { type: "string", operators: ["eq", "neq", "contains"], note: "Case-insensitive" },
+            phone: { type: "string", operators: ["eq", "neq", "contains"], note: "Case-insensitive" },
+            city: { type: "string", operators: ["eq", "neq", "contains", "in"], note: "Case-insensitive. Use exact city names like Delhi, Mumbai, Jaipur, etc." },
             optedOut: { type: "boolean", operators: ["eq"] },
-            createdAt: { type: "datetime", operators: ["gt", "gte", "lt", "lte", "eq"] },
+            createdAt: { type: "datetime", operators: ["gt", "gte", "lt", "lte", "eq"], note: "Supports relative dates like '30 days ago' or 'last 2 months'" },
           },
           nested: {
-            "orders.amount": { type: "number", operators: ["gt", "gte", "lt", "lte", "eq"] },
-            "orders.orderedAt": { type: "datetime", operators: ["gt", "gte", "lt", "lte", "eq"] },
+            "orders.amount": { type: "number", operators: ["gt", "gte", "lt", "lte", "eq"], note: "Individual order amount, NOT average" },
+            "orders.orderedAt": { type: "datetime", operators: ["gt", "gte", "lt", "lte", "eq"], note: "Supports relative dates like '30 days ago' or 'last 2 months'" },
             "orders.channel": { type: "string", operators: ["eq", "in"], values: ["online", "app", "store"] },
+          },
+          virtual: {
+            lastOrderDays: {
+              type: "number",
+              operators: ["lte"],
+              description: "Matches customers who have at least one order in the last N days. Use 'lastOrderDays lte N'. E.g., 'lastOrderDays lte 50' means active in last 50 days.",
+            },
           },
           jsonPath: {
             "attributes.*": { type: "any", operators: ["eq", "contains"] },
           },
         },
         filterFormat: {
-          description: "Filters use operator (AND/OR) + conditions array",
+          description: "Filters use operator (AND/OR) + conditions array. String comparisons are case-insensitive. Dates support relative values.",
           example: {
             operator: "AND",
             conditions: [
               { field: "city", op: "eq", value: "Mumbai" },
-              { field: "orders.amount", op: "gt", value: 1000 },
+              { field: "orders.amount", op: "gt", value: "1000" },
             ],
           },
+        },
+        commonPatterns: {
+          premiumSpenders: "Use 'orders.amount gt <threshold>' to find customers who make large purchases",
+          activeRecently: "Use 'lastOrderDays lte N' or 'orders.orderedAt gte <relative_date>' to find recently active customers",
+          inactiveCustomers: "Use 'orders.orderedAt lt <relative_date>' to find inactive customers",
+          cityBased: "Use 'city eq <city_name>' — matching is case-insensitive",
         },
         mergeFields: ["name", "top_product", "city", "days_since_last_order", "total_orders"],
         channels: ["whatsapp", "email", "sms", "rcs"],

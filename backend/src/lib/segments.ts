@@ -10,6 +10,10 @@
  *     { field: "attributes.tier", op: "eq", value: "gold" }
  *   ]
  * }
+ *
+ * String comparisons (city, name, email, phone) are case-insensitive.
+ * Date fields support relative expressions like "30 days ago" or "last 50 days".
+ * Virtual field "lastOrderDays" translates to orders.orderedAt >= now() - N days.
  */
 
 interface Condition {
@@ -27,12 +31,80 @@ function isFilterGroup(c: any): c is FilterGroup {
   return c && "operator" in c && "conditions" in c;
 }
 
-function mapOperator(op: string, value: any): any {
-  switch (op) {
+// Normalize symbolic operators some LLMs emit (e.g. ">", "=") to the canonical DSL ops.
+const OP_ALIASES: Record<string, string> = {
+  "=": "eq", "==": "eq", "===": "eq",
+  "!=": "neq", "<>": "neq",
+  ">": "gt", ">=": "gte",
+  "<": "lt", "<=": "lte",
+};
+
+// Fields that are strings in the DB and should use case-insensitive matching.
+const STRING_FIELDS = new Set(["city", "name", "email", "phone"]);
+
+// Fields whose values are numeric. LLM providers (e.g. Gemini) may emit these as
+// strings, so coerce here for correct numeric comparisons.
+const NUMERIC_FIELDS = new Set(["orders.amount", "amount", "lastOrderDays"]);
+
+// Date fields that accept absolute or relative date strings.
+const DATE_FIELDS = new Set(["createdAt", "orders.orderedAt", "orderedAt"]);
+
+/**
+ * Parse relative date strings like "30 days ago", "last 50 days", "7d ago", etc.
+ * Returns a Date if matched, otherwise null.
+ */
+function parseRelativeDate(value: string): Date | null {
+  if (typeof value !== "string") return null;
+  const v = value.trim().toLowerCase();
+
+  // Pattern: "N days ago" / "N day ago"
+  let m = v.match(/^(\d+)\s*days?\s*ago$/);
+  if (m) return new Date(Date.now() - parseInt(m[1]) * 24 * 60 * 60 * 1000);
+
+  // Pattern: "last N days" / "past N days"
+  m = v.match(/^(?:last|past)\s+(\d+)\s*days?$/);
+  if (m) return new Date(Date.now() - parseInt(m[1]) * 24 * 60 * 60 * 1000);
+
+  // Pattern: "Nd ago" (shorthand)
+  m = v.match(/^(\d+)d\s*ago$/);
+  if (m) return new Date(Date.now() - parseInt(m[1]) * 24 * 60 * 60 * 1000);
+
+  // Pattern: "N months ago"
+  m = v.match(/^(\d+)\s*months?\s*ago$/);
+  if (m) return new Date(Date.now() - parseInt(m[1]) * 30 * 24 * 60 * 60 * 1000);
+
+  // Pattern: "last N months"
+  m = v.match(/^(?:last|past)\s+(\d+)\s*months?$/);
+  if (m) return new Date(Date.now() - parseInt(m[1]) * 30 * 24 * 60 * 60 * 1000);
+
+  return null;
+}
+
+/**
+ * Process a date value — try relative first, then absolute ISO parse.
+ */
+function processDateValue(value: any): Date {
+  if (value instanceof Date) return value;
+  if (typeof value === "string") {
+    const relative = parseRelativeDate(value);
+    if (relative) return relative;
+    const d = new Date(value);
+    if (!isNaN(d.getTime())) return d;
+  }
+  throw new Error(`Cannot parse date value: ${JSON.stringify(value)}`);
+}
+
+function mapOperator(op: string, value: any, isStringField: boolean): any {
+  const normalized = OP_ALIASES[op] ?? op;
+  switch (normalized) {
     case "eq":
-      return { equals: value };
+      return isStringField
+        ? { equals: value, mode: "insensitive" }
+        : { equals: value };
     case "neq":
-      return { not: value };
+      return isStringField
+        ? { not: { equals: value, mode: "insensitive" } }
+        : { not: value };
     case "gt":
       return { gt: value };
     case "gte":
@@ -43,35 +115,77 @@ function mapOperator(op: string, value: any): any {
       return { lte: value };
     case "contains":
       return { contains: value, mode: "insensitive" };
-    case "in":
-      return { in: Array.isArray(value) ? value : [value] };
+    case "in": {
+      const arr = Array.isArray(value) ? value : [value];
+      if (isStringField) {
+        // For case-insensitive "in", we use OR with equals+insensitive for each value.
+        // Prisma doesn't support mode on `in`, so we'll handle this at buildCondition level.
+        return { __ciIn: arr };
+      }
+      return { in: arr };
+    }
     default:
-      return { equals: value };
+      return isStringField
+        ? { equals: value, mode: "insensitive" }
+        : { equals: value };
   }
 }
 
 function buildCondition(condition: Condition): any {
   const { field, op, value } = condition;
 
-  // Handle date values
-  let processedValue = value;
-  if (
-    field === "createdAt" ||
-    field === "orders.orderedAt" ||
-    field === "orderedAt"
-  ) {
-    if (typeof value === "string") {
-      processedValue = new Date(value);
+  // Virtual field: "lastOrderDays" → orders.orderedAt >= now() - N days
+  if (field === "lastOrderDays") {
+    const days = typeof value === "string" ? parseInt(value) : value;
+    if (isNaN(days)) {
+      throw new Error(`Invalid value for lastOrderDays: ${value}`);
     }
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    return {
+      orders: {
+        some: {
+          orderedAt: { gte: cutoff },
+        },
+      },
+    };
+  }
+
+  // Determine field category
+  const isString = STRING_FIELDS.has(field);
+  const isDate = DATE_FIELDS.has(field);
+  const isNumeric = NUMERIC_FIELDS.has(field);
+
+  // Process value based on field type
+  let processedValue = value;
+  if (isDate) {
+    processedValue = processDateValue(value);
+  } else if (isNumeric && typeof value === "string" && value.trim() !== "" && !isNaN(Number(value))) {
+    processedValue = Number(value);
   }
 
   // Handle nested fields
   if (field.startsWith("orders.")) {
     const orderField = field.replace("orders.", "");
+    const isOrderStringField = orderField === "channel";
+    const mapped = mapOperator(op, processedValue, isOrderStringField);
+
+    // Handle case-insensitive "in" for order string fields
+    if (mapped.__ciIn) {
+      return {
+        orders: {
+          some: {
+            OR: mapped.__ciIn.map((v: string) => ({
+              [orderField]: { equals: v, mode: "insensitive" },
+            })),
+          },
+        },
+      };
+    }
+
     return {
       orders: {
         some: {
-          [orderField]: mapOperator(op, processedValue),
+          [orderField]: mapped,
         },
       },
     };
@@ -91,9 +205,20 @@ function buildCondition(condition: Condition): any {
     };
   }
 
-  // Direct fields
+  // Direct fields — apply case-insensitive matching for string fields
+  const mapped = mapOperator(op, processedValue, isString);
+
+  // Handle case-insensitive "in" — expand to OR + equals+insensitive
+  if (mapped.__ciIn) {
+    return {
+      OR: mapped.__ciIn.map((v: string) => ({
+        [field]: { equals: v, mode: "insensitive" },
+      })),
+    };
+  }
+
   return {
-    [field]: mapOperator(op, processedValue),
+    [field]: mapped,
   };
 }
 

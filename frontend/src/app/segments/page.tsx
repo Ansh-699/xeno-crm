@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch, apiStream, aiApiFetch } from "@/lib/api";
-import { Target, Users, Calendar, Sparkles, Loader2, Plus, ArrowRight, Megaphone } from "lucide-react";
+import { apiFetch, apiStream, aiApiFetch, hasAICredentials } from "@/lib/api";
+import { Target, Users, Calendar, Sparkles, Loader2, Plus, ArrowRight, Megaphone, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 
 interface Segment {
@@ -34,6 +34,7 @@ export default function SegmentsPage() {
   const [nlInput, setNlInput] = useState("");
   const [creating, setCreating] = useState(false);
   const [createStatus, setCreateStatus] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     loadSegments();
@@ -80,16 +81,30 @@ export default function SegmentsPage() {
   async function handleNlCreate(textOverride?: string) {
     const input = textOverride || nlInput;
     if (!input.trim() || creating) return;
+
+    // Clear previous state
+    setCreateError(null);
+    setCreateStatus(null);
+
+    // Pre-flight: check for AI credentials
+    if (!hasAICredentials()) {
+      setCreateError("AI credentials not configured. Click the ⚙️ icon in the sidebar to set your provider and API key.");
+      return;
+    }
+
     setCreating(true);
     setCreateStatus("Analyzing request and parsing filter criteria...");
+
+    let segmentCreated = false;
+    let aiText = "";
 
     try {
       const prompt = `Create a segment based on this description: "${input.trim()}". Only use the create_segment tool. Do not launch any campaigns or do anything else.`;
 
       const res = await apiStream("/api/agent/run", { message: prompt });
-      if (!res.ok) throw new Error("Failed to create segment");
+      if (!res.body) throw new Error("Empty response from server");
 
-      const reader = res.body!.getReader();
+      const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
 
@@ -105,27 +120,66 @@ export default function SegmentsPage() {
           if (!line.trim()) continue;
           try {
             const event = JSON.parse(line);
+
             if (event.type === "text" && event.text) {
+              aiText += event.text;
               setCreateStatus(event.text.slice(0, 200));
             }
+
+            if (event.type === "error") {
+              const errMsg = event.error || "An unexpected error occurred";
+              // Check for common API errors
+              if (errMsg.toLowerCase().includes("api key") || errMsg.toLowerCase().includes("authentication")) {
+                setCreateError("Invalid API key. Please check your AI Settings (⚙️).");
+              } else if (errMsg.toLowerCase().includes("quota") || errMsg.toLowerCase().includes("rate")) {
+                setCreateError("API rate limit or quota exceeded. Please wait a moment and try again.");
+              } else {
+                setCreateError(`AI Error: ${errMsg}`);
+              }
+              setCreateStatus(null);
+              setCreating(false);
+              return;
+            }
+
             if (event.type === "tool_result") {
               const output = typeof event.toolResult?.output === "string"
                 ? JSON.parse(event.toolResult.output)
                 : event.toolResult?.output;
-              if (output?.segment || output?.success) {
-                setCreateStatus("Segment created successfully!");
+              if (output?.segment || output?.success || output?.segmentId) {
+                segmentCreated = true;
+                const count = output.customerCount ?? 0;
+                setCreateStatus(`✅ Segment "${output.name || "Untitled"}" created with ${count} matching customers!`);
+              }
+              if (output?.error) {
+                setCreateError(`Filter error: ${output.error}`);
               }
             }
           } catch {}
         }
       }
 
-      setNlInput("");
-      await loadSegments();
-      setTimeout(() => setCreateStatus(null), 3000);
+      // Post-stream: check if segment was actually created
+      if (!segmentCreated && !createError) {
+        // The AI responded with text but never called create_segment
+        if (aiText.toLowerCase().includes("can't") || aiText.toLowerCase().includes("cannot") || aiText.toLowerCase().includes("unable")) {
+          setCreateError(`The AI couldn't create this segment: ${aiText.slice(0, 200)}`);
+        } else {
+          setCreateError("No segment was created. The AI may not have understood the request. Try rephrasing, e.g., \"Customers in Delhi with orders over 500\".");
+        }
+        setCreateStatus(null);
+      }
+
+      if (segmentCreated) {
+        setNlInput("");
+        await loadSegments();
+        setTimeout(() => {
+          setCreateStatus(null);
+          setCreateError(null);
+        }, 5000);
+      }
     } catch (err: any) {
-      setCreateStatus(`Error: ${err.message}`);
-      setTimeout(() => setCreateStatus(null), 5000);
+      setCreateError(err.message || "Failed to create segment. Please try again.");
+      setCreateStatus(null);
     } finally {
       setCreating(false);
     }
@@ -222,9 +276,24 @@ export default function SegmentsPage() {
           </button>
         </div>
         {createStatus && (
-          <p className={`text-xs mt-2 ${createStatus.startsWith("Error") ? "text-red-400" : "text-zinc-400"}`}>
+          <p className={`text-xs mt-2 ${createStatus.startsWith("✅") ? "text-emerald-400" : "text-zinc-400"}`}>
+            {creating && <Loader2 className="inline h-3 w-3 animate-spin mr-1" />}
             {createStatus}
           </p>
+        )}
+        {createError && (
+          <div className="mt-3 p-3 rounded-lg bg-red-950/30 border border-red-900/40 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-xs text-red-300">{createError}</p>
+              <button
+                onClick={() => setCreateError(null)}
+                className="text-[10px] text-red-500 hover:text-red-400 mt-1 underline"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
         )}
       </div>
 

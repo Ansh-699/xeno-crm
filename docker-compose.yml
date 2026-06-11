@@ -47,6 +47,7 @@ services:
       DATABASE_URL: "postgresql://xeno:xeno@postgres:5432/xeno?schema=public"
       REDIS_URL: "redis://redis:6379"
       CHANNEL_SERVICE_URL: "http://channel-service:4000"
+      CALLBACK_URL: "http://backend:3001/api/receipts"
       PORT: "3001"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
     depends_on:

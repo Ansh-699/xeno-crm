@@ -47,3 +47,8 @@
 - **Did**: segment size is computed fresh on every read (`prisma.customer.count({ where: filtersToWhere(filters) })`); the column was removed from the schema.
 - **Why**: a cached count grows stale as customers are added/deleted. At 2k customers a live count is fast enough.
 - **At scale**: materialise the count with a periodic background job or a DB trigger; cache in Redis with a short TTL.
+
+## 10. Synchronous validate-then-`createMany` ingestion
+- **Did**: `POST /api/customers/bulk` and `/api/orders/bulk` validate every row with zod, partition valid/invalid, bulk-insert valid rows, and report per-row errors. Orders carry an optional unique `externalId` for idempotent re-ingest, and each newly inserted order is attributed inline (7-day most-recent-delivery window).
+- **Why**: correct and simple at ~2k/8k. Per-row validation means one bad row never fails the batch; `skipDuplicates` on `externalId` makes re-posting a batch safe (no double-counted revenue); inline attribution means live orders are credited immediately instead of waiting for the `/backfill-attribution` admin job (which now serves seeded/historical data only).
+- **At scale**: move to validate-at-API + an async consumer (pub/sub), keeping the same `externalId` idempotency key for exactly-once ingest; run attribution as a downstream event handler rather than synchronously in the request, and batch it.

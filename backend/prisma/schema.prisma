@@ -26,6 +26,7 @@ model Customer {
 
 model Order {
   id         String   @id @default(cuid())
+  externalId String?  @unique          // source system order id, for idempotent ingest
   customerId String
   customer   Customer @relation(fields: [customerId], references: [id])
   amount     Float
