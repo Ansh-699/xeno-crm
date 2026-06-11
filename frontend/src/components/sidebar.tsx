@@ -11,6 +11,7 @@ import {
   Bot,
   BarChart3,
 } from "lucide-react";
+import { AISettingsButton } from "./AISettings";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -50,8 +51,9 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <div className="px-5 py-4 border-t border-zinc-800">
-        <p className="text-xs text-zinc-600">AI-Native CRM Platform</p>
+      <div className="px-4 py-4 border-t border-zinc-800 flex items-center justify-between">
+        <p className="text-xs text-zinc-600">AI-Native CRM</p>
+        <AISettingsButton />
       </div>
     </aside>
   );

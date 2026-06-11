@@ -1,8 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
 import prisma from "../prisma";
-import { toolDefinitions, executeTool, TOOLS_REQUIRING_CONFIRMATION } from "./tools/index";
-
-const client = new Anthropic();
+import { toolDefinitions, executeTool, TOOLS_REQUIRING_CONFIRMATION, setToolCreds } from "./tools/index";
+import { makeProvider, LLMCredentials, LLMMessage, LLMContentBlock, LLMToolDef } from "./llm";
 
 const SYSTEM_PROMPT = `You are an AI campaign manager for a CRM system called Xeno. You help users create audience segments, draft marketing messages, recommend channels, and launch campaigns.
 
@@ -16,6 +14,8 @@ You have access to the following tools:
 - launch_campaign: Launch a campaign (requires confirmation)
 - get_campaign_stats: Get live campaign delivery stats
 - analyze_performance: Get an AI-generated performance brief for a campaign
+- compare_campaigns: Compare performance across multiple campaigns
+- get_segment_analytics: Analyze historical performance for a segment
 
 Available merge fields: {{name}}, {{top_product}}, {{city}}, {{days_since_last_order}}, {{total_orders}}.
 
@@ -36,11 +36,14 @@ interface PendingTool {
   name: string;
   input: any;
   toolUseId: string;
+  // Results of non-confirmation tools that ran in the same turn. Held here so that
+  // on approval all tool_results for this assistant turn land in ONE user message.
+  partialResults?: LLMContentBlock[];
 }
 
 interface AgentRunState {
   id: string;
-  messages: Anthropic.MessageParam[];
+  messages: LLMMessage[];
   status: "active" | "paused" | "completed" | "failed";
   pendingTool?: PendingTool;
 }
@@ -49,7 +52,7 @@ async function loadRun(runId: string): Promise<AgentRunState> {
   const run = await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } });
   return {
     id: run.id,
-    messages: run.messages as unknown as Anthropic.MessageParam[],
+    messages: run.messages as unknown as LLMMessage[],
     status: run.status as AgentRunState["status"],
     pendingTool: run.pendingTool as unknown as PendingTool | undefined,
   };
@@ -67,88 +70,76 @@ async function saveRun(run: AgentRunState): Promise<void> {
 }
 
 export async function createRun(): Promise<string> {
-  // Clean up old runs (older than 24h)
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  await prisma.agentRun.deleteMany({
-    where: { createdAt: { lt: cutoff } },
-  }).catch(() => {}); // non-critical
+  await prisma.agentRun.deleteMany({ where: { createdAt: { lt: cutoff } } }).catch(() => {});
 
-  const run = await prisma.agentRun.create({
-    data: {
-      messages: [],
-      status: "active",
-    },
-  });
+  const run = await prisma.agentRun.create({ data: { messages: [], status: "active" } });
   return run.id;
 }
 
 export async function* agentLoop(
   runId: string,
-  input: { userMessage?: string; approved?: boolean }
+  input: { userMessage?: string; approved?: boolean },
+  creds: LLMCredentials
 ): AsyncGenerator<AgentEvent> {
   let run = await loadRun(runId);
 
+  const makeResultBlock = (toolUseId: string, content: string, isError = false): LLMContentBlock => ({
+    type: "tool_result",
+    toolUseId,
+    content,
+    isError,
+  });
+
   // Handle input: new message or approval/rejection
   if (input.userMessage) {
-    run.messages.push({ role: "user", content: input.userMessage });
+    run.messages.push({ role: "user", content: [{ type: "text", text: input.userMessage }] });
     run.status = "active";
   } else if (input.approved !== undefined && run.pendingTool) {
+    const partialResults: LLMContentBlock[] = run.pendingTool.partialResults ?? [];
     if (input.approved) {
-      // Execute the pending tool
       try {
         const result = await executeTool(run.pendingTool.name, run.pendingTool.input);
+        const content = typeof result === "string" ? result : JSON.stringify(result);
         run.messages.push({
           role: "user",
-          content: [
-            {
-              type: "tool_result",
-              tool_use_id: run.pendingTool.toolUseId,
-              content: typeof result === "string" ? result : JSON.stringify(result),
-            },
-          ],
+          content: [...partialResults, makeResultBlock(run.pendingTool.toolUseId, content)],
         });
         yield { type: "tool_result", toolResult: { name: run.pendingTool.name, output: result } };
       } catch (err: any) {
         run.messages.push({
           role: "user",
-          content: [
-            {
-              type: "tool_result",
-              tool_use_id: run.pendingTool.toolUseId,
-              content: `Error: ${err.message}`,
-              is_error: true,
-            },
-          ],
+          content: [...partialResults, makeResultBlock(run.pendingTool.toolUseId, `Error: ${err.message}`, true)],
         });
         yield { type: "error", error: `Tool execution failed: ${err.message}` };
       }
     } else {
-      // User rejected
       run.messages.push({
         role: "user",
         content: [
-          {
-            type: "tool_result",
-            tool_use_id: run.pendingTool.toolUseId,
-            content: "User rejected this action. Please adjust your approach or ask the user what they'd prefer.",
-            is_error: true,
-          },
+          ...partialResults,
+          makeResultBlock(
+            run.pendingTool.toolUseId,
+            "User rejected this action. Please adjust your approach or ask the user what they'd prefer.",
+            true
+          ),
         ],
       });
     }
     run.pendingTool = undefined;
     run.status = "active";
   } else if (run.status === "paused" && input.approved === undefined) {
-    // If paused but no approval signal, just return current state
     yield { type: "confirmation_required", confirmation: run.pendingTool as any };
     await saveRun(run);
     return;
   }
 
-  const anthropicTools: Anthropic.Tool[] = toolDefinitions.map((t) => ({
+  setToolCreds(creds);
+  const provider = makeProvider(creds);
+  const tools: LLMToolDef[] = toolDefinitions.map((t) => ({
     name: t.name,
     description: t.description,
-    input_schema: t.input_schema as Anthropic.Tool.InputSchema,
+    inputSchema: t.input_schema,
   }));
 
   let iterations = 0;
@@ -158,92 +149,77 @@ export async function* agentLoop(
     iterations++;
 
     try {
-      // Use streaming API
-      const stream = client.messages.stream({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 4096,
+      const resp = await provider.generate({
         system: SYSTEM_PROMPT,
-        tools: anthropicTools,
         messages: run.messages,
+        tools,
+        maxTokens: 4096,
       });
 
-      let accumulatedText = "";
-      const toolUses: Array<{ id: string; name: string; input: any }> = [];
-
-      // Collect streaming events
-      const response = await stream.finalMessage();
-
-      for (const block of response.content) {
-        if (block.type === "text" && block.text) {
-          accumulatedText += block.text;
-          yield { type: "text", text: block.text };
-        } else if (block.type === "tool_use") {
-          toolUses.push({ id: block.id, name: block.name, input: block.input });
-          yield { type: "tool_use", toolUse: { id: block.id, name: block.name, input: block.input } };
-        }
+      // Yield text and tool_use events
+      if (resp.text) yield { type: "text", text: resp.text };
+      for (const tu of resp.toolUses) {
+        yield { type: "tool_use", toolUse: { id: tu.id, name: tu.name, input: tu.input } };
       }
 
-      // Add assistant response to history BEFORE executing tools
-      run.messages.push({ role: "assistant", content: response.content });
+      // Persist assistant turn in neutral format
+      run.messages.push({
+        role: "assistant",
+        content: [
+          ...(resp.text ? [{ type: "text" as const, text: resp.text }] : []),
+          ...resp.toolUses.map((t) => ({ type: "tool_use" as const, id: t.id, name: t.name, input: t.input })),
+        ],
+      });
 
-      // If no tool calls, we're done
-      if (toolUses.length === 0) {
+      if (resp.toolUses.length === 0) {
         run.status = "completed";
         yield { type: "end" };
         break;
       }
 
-      // Process tool calls
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
+      const toolResults: LLMContentBlock[] = [];
       let paused = false;
+      let pendingTool: PendingTool | undefined;
 
-      for (const tool of toolUses) {
+      for (const tool of resp.toolUses) {
         if (TOOLS_REQUIRING_CONFIRMATION.has(tool.name)) {
-          // Pause for confirmation
-          run.pendingTool = { name: tool.name, input: tool.input, toolUseId: tool.id };
-          run.status = "paused";
-          paused = true;
-          yield {
-            type: "confirmation_required",
-            confirmation: { toolName: tool.name, input: tool.input, toolUseId: tool.id },
-          };
-          break;
+          // Only capture the first confirmation-gated tool per turn to avoid orphaned tool_use.
+          if (!pendingTool) {
+            pendingTool = { name: tool.name, input: tool.input, toolUseId: tool.id };
+            paused = true;
+          }
+          continue;
         }
 
-        // Execute non-confirmation tools immediately
         try {
           const result = await executeTool(tool.name, tool.input);
           const resultStr = typeof result === "string" ? result : JSON.stringify(result);
-          toolResults.push({
-            type: "tool_result",
-            tool_use_id: tool.id,
-            content: resultStr,
-          });
+          toolResults.push(makeResultBlock(tool.id, resultStr));
           yield { type: "tool_result", toolResult: { name: tool.name, output: result } };
         } catch (err: any) {
-          toolResults.push({
-            type: "tool_result",
-            tool_use_id: tool.id,
-            content: `Error: ${err.message}`,
-            is_error: true,
-          });
+          toolResults.push(makeResultBlock(tool.id, `Error: ${err.message}`, true));
           yield { type: "error", error: `Tool ${tool.name} failed: ${err.message}` };
         }
       }
 
-      if (paused) {
-        // Save and return - waiting for user approval
+      if (paused && pendingTool) {
+        // Stash partial results; on approval they'll be emitted in one user message.
+        pendingTool.partialResults = toolResults;
+        run.pendingTool = pendingTool;
+        run.status = "paused";
+        yield {
+          type: "confirmation_required",
+          confirmation: { toolName: pendingTool.name, input: pendingTool.input, toolUseId: pendingTool.toolUseId },
+        };
         await saveRun(run);
         return;
       }
 
-      // Add tool results to history and continue loop
       if (toolResults.length > 0) {
         run.messages.push({ role: "user", content: toolResults });
       }
 
-      // If stop_reason is end_turn and there were tools, continue to get final text
-      if (response.stop_reason === "end_turn") {
+      if (resp.stopReason === "end_turn" || resp.stopReason === "stop") {
         run.status = "completed";
         yield { type: "end" };
         break;

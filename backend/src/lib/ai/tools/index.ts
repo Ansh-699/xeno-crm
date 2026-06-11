@@ -3,7 +3,7 @@ import prisma from "../../prisma";
 import { filtersToWhere, validateFilters } from "../../segments";
 import { launchCampaign } from "../../campaign-launcher";
 import { getCampaignStats } from "../../redis";
-import { randomUUID } from "crypto";
+import { createHash } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 
 // Tools that require user confirmation before execution
@@ -246,6 +246,37 @@ export const toolDefinitions: ToolDefinition[] = [
       required: ["campaignId"],
     },
   },
+  {
+    name: "compare_campaigns",
+    description:
+      "Compare the performance of two or more campaigns. Returns side-by-side metrics including delivery, open, and click rates per channel.",
+    input_schema: {
+      type: "object",
+      properties: {
+        campaignIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Array of campaign IDs to compare",
+        },
+      },
+      required: ["campaignIds"],
+    },
+  },
+  {
+    name: "get_segment_analytics",
+    description:
+      "Analyze a segment's size, channel availability, opted-out share, and aggregate performance of previous campaigns sent to it.",
+    input_schema: {
+      type: "object",
+      properties: {
+        segmentId: {
+          type: "string",
+          description: "The segment ID to analyze",
+        },
+      },
+      required: ["segmentId"],
+    },
+  },
 ];
 
 // Tool executors
@@ -269,6 +300,10 @@ export async function executeTool(name: string, input: any): Promise<string> {
       return executeGetCampaignStats(input);
     case "analyze_performance":
       return executeAnalyzePerformance(input);
+    case "compare_campaigns":
+      return executeCompareCampaigns(input);
+    case "get_segment_analytics":
+      return executeGetSegmentAnalytics(input);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -382,7 +417,6 @@ async function executeCreateSegment(input: {
       description: input.description || null,
       filters: input.filters,
       aiGenerated: true,
-      customerCount,
     },
   });
 
@@ -542,7 +576,7 @@ async function executeRecommendChannels(input: {
     excluded: 0,
   };
 
-  const decisions: Array<{ customerId: string; channel: string; reason: string }> = [];
+  const decisions: Array<{ segmentId: string; customerId: string; channel: string; reason: string }> = [];
 
   for (const customer of customers) {
     if (customer.optedOut) {
@@ -587,27 +621,19 @@ async function executeRecommendChannels(input: {
     }
 
     distribution[channel]++;
-    decisions.push({ customerId: customer.id, channel, reason });
-  }
-
-  // Batch upsert decisions
-  for (const decision of decisions) {
-    await prisma.channelDecision.upsert({
-      where: {
-        segmentId_customerId: {
-          segmentId: input.segmentId,
-          customerId: decision.customerId,
-        },
-      },
-      update: { channel: decision.channel, reason: decision.reason },
-      create: {
-        segmentId: input.segmentId,
-        customerId: decision.customerId,
-        channel: decision.channel,
-        reason: decision.reason,
-      },
+    decisions.push({
+      segmentId: input.segmentId,
+      customerId: customer.id,
+      channel,
+      reason,
     });
   }
+
+  // Batch upsert decisions: delete existing and createMany
+  await prisma.$transaction([
+    prisma.channelDecision.deleteMany({ where: { segmentId: input.segmentId } }),
+    prisma.channelDecision.createMany({ data: decisions }),
+  ]);
 
   return JSON.stringify({
     success: true,
@@ -629,30 +655,29 @@ async function executeLaunchCampaign(input: {
   messages: Record<string, string>;
   goal?: string;
 }): Promise<string> {
-  try {
-    const strategy = input.channelStrategy || (input.channel ? "single" : "per_customer");
+  const strategy = input.channelStrategy || (input.channel ? "single" : "per_customer");
 
-    const result = await launchCampaign({
-      segmentId: input.segmentId,
-      name: input.name,
-      channel: input.channel || "whatsapp",
-      channelStrategy: strategy,
-      messages: input.messages,
-      launchToken: randomUUID(),
-      goal: input.goal,
-    });
+  const semanticPayload = `${input.segmentId}:${input.name}:${JSON.stringify(input.messages)}`;
+  const stableToken = createHash("sha256").update(semanticPayload).digest("hex");
 
-    return JSON.stringify({
-      success: true,
-      campaignId: result.campaignId,
-      totalRecipients: result.totalRecipients,
-      exclusions: result.exclusions,
-      channelDistribution: result.channelDistribution,
-      message: `Campaign "${input.name}" launched to ${result.totalRecipients} recipients. ${result.exclusions.total} customers excluded (${result.exclusions.optedOut} opted out, ${result.exclusions.noContact} no contact info).`,
-    });
-  } catch (err: any) {
-    return JSON.stringify({ error: err.message });
-  }
+  const result = await launchCampaign({
+    segmentId: input.segmentId,
+    name: input.name,
+    channel: input.channel || "whatsapp",
+    channelStrategy: strategy,
+    messages: input.messages,
+    launchToken: stableToken,
+    goal: input.goal,
+  });
+
+  return JSON.stringify({
+    success: true,
+    campaignId: result.campaignId,
+    totalRecipients: result.totalRecipients,
+    exclusions: result.exclusions,
+    channelDistribution: result.channelDistribution,
+    message: `Campaign "${input.name}" launched to ${result.totalRecipients} recipients. ${result.exclusions.total} customers excluded (${result.exclusions.optedOut} opted out, ${result.exclusions.noContact} no contact info).`,
+  });
 }
 
 // ─── Tool 8: get_campaign_stats ──────────────────────────────────────────────
@@ -694,18 +719,71 @@ async function executeGetCampaignStats(input: {
 }
 
 import { generateCampaignBrief } from "../brief-generator";
+import { getAnalyticsData } from "../../analytics";
+import type { LLMCredentials } from "../llm";
+
+let _toolCreds: LLMCredentials | undefined;
+export function setToolCreds(c: LLMCredentials | undefined) { _toolCreds = c; }
 
 async function executeAnalyzePerformance(input: {
   campaignId: string;
 }): Promise<string> {
-  try {
-    const brief = await generateCampaignBrief(input.campaignId);
-    return JSON.stringify({
-      success: true,
-      campaignId: input.campaignId,
-      brief,
-    });
-  } catch (err: any) {
-    return JSON.stringify({ error: err.message });
+  const brief = await generateCampaignBrief(input.campaignId, _toolCreds);
+  return JSON.stringify({
+    success: true,
+    campaignId: input.campaignId,
+    brief,
+  });
+}
+
+async function executeCompareCampaigns(input: { campaignIds: string[] }): Promise<string> {
+  const { campaigns } = await getAnalyticsData();
+  const toCompare = campaigns.filter(c => input.campaignIds.includes(c.id));
+  if (toCompare.length === 0) {
+    throw new Error("No matching campaigns found.");
   }
+  return JSON.stringify({
+    comparisons: toCompare.map(c => ({
+      id: c.id,
+      name: c.name,
+      status: c.status,
+      segmentName: c.segmentName,
+      totalRecipients: c.totalRecipients,
+      stats: c.stats,
+      deliveryRate: c.deliveryRate,
+      openRate: c.openRate,
+    }))
+  });
+}
+
+async function executeGetSegmentAnalytics(input: { segmentId: string }): Promise<string> {
+  const segment = await prisma.segment.findUnique({ where: { id: input.segmentId } });
+  if (!segment) {
+    throw new Error(`Segment not found: ${input.segmentId}`);
+  }
+
+  const where = filtersToWhere(segment.filters as any);
+  const customers = await prisma.customer.findMany({
+    where,
+    select: { email: true, phone: true, optedOut: true }
+  });
+
+  const channelAvailability = {
+    withEmail: customers.filter((c) => c.email).length,
+    withPhone: customers.filter((c) => c.phone).length,
+    optedOut: customers.filter((c) => c.optedOut).length,
+  };
+
+  const pastCampaigns = await prisma.campaign.findMany({
+    where: { segmentId: input.segmentId, status: { in: ["completed", "sending"] } },
+    select: { id: true, name: true, status: true, totalRecipients: true, createdAt: true }
+  });
+
+  return JSON.stringify({
+    segmentId: input.segmentId,
+    name: segment.name,
+    customerCount: customers.length,
+    channelAvailability,
+    pastCampaigns
+  });
 }

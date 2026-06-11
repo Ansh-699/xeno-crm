@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, aiApiFetch } from "@/lib/api";
 import {
   BarChart3,
   TrendingUp,
@@ -17,6 +17,8 @@ import {
   Sparkles,
   Loader2,
   RefreshCw,
+  ShoppingCart,
+  IndianRupee,
 } from "lucide-react";
 
 interface ChannelStats {
@@ -45,6 +47,9 @@ interface CampaignDetail {
   };
   deliveryRate: number;
   openRate: number;
+  conversions: number;
+  attributedRevenue: number;
+  conversionRate: number;
 }
 
 interface AnalyticsData {
@@ -55,6 +60,9 @@ interface AnalyticsData {
     totalFailed: number;
     totalOpened: number;
     totalClicked: number;
+    totalConversions: number;
+    totalAttributedRevenue: number;
+    overallConversionRate: number;
     avgDeliveryRate: number;
     avgOpenRate: number;
     bestChannel: string;
@@ -92,7 +100,7 @@ export default function AnalyticsPage() {
   async function loadNarrative() {
     setLoadingNarrative(true);
     try {
-      const res = await apiFetch<{ narrative: string }>("/api/insights/analytics-narrative");
+      const res = await aiApiFetch<{ narrative: string }>("/api/insights/analytics-narrative");
       setNarrative(res.narrative);
     } catch {
       setNarrative("Unable to generate performance analysis summary.");
@@ -167,7 +175,7 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Overview Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
         <OverviewCard
           label="Campaigns"
           value={overview.totalCampaigns}
@@ -209,6 +217,20 @@ export default function AnalyticsPage() {
           icon={ArrowUpRight}
           color="text-cyan-400"
           bgColor="bg-cyan-500/10"
+        />
+        <OverviewCard
+          label="Conversions"
+          value={overview.totalConversions.toLocaleString()}
+          icon={ShoppingCart}
+          color="text-pink-400"
+          bgColor="bg-pink-500/10"
+        />
+        <OverviewCard
+          label="Attr. Revenue"
+          value={`₹${overview.totalAttributedRevenue.toLocaleString()}`}
+          icon={IndianRupee}
+          color="text-lime-400"
+          bgColor="bg-lime-500/10"
         />
       </div>
 
@@ -387,6 +409,11 @@ export default function AnalyticsPage() {
                             color="text-amber-400"
                           />
                         )}
+                        <MiniStat
+                          label="Conversions"
+                          value={c.conversions}
+                          color="text-pink-400"
+                        />
                         <div className="text-right">
                           <RateBadge rate={c.deliveryRate} />
                           <p className="text-[10px] text-zinc-600 mt-0.5">
@@ -494,6 +521,32 @@ export default function AnalyticsPage() {
                           </>
                         )}
                       </div>
+
+                      {/* Conversion attribution */}
+                      {(c.conversions > 0 || c.attributedRevenue > 0) && (
+                        <div className="grid grid-cols-3 gap-3">
+                          <DetailStat
+                            label="Conversions"
+                            value={c.conversions}
+                            icon={ShoppingCart}
+                            color="text-pink-400"
+                          />
+                          <div className="rounded-lg bg-zinc-900 border border-zinc-800 p-3 text-center">
+                            <IndianRupee className="h-3.5 w-3.5 mx-auto mb-1.5 text-lime-400" />
+                            <p className="text-lg font-semibold tabular-nums text-lime-400">
+                              ₹{c.attributedRevenue.toLocaleString()}
+                            </p>
+                            <p className="text-[10px] text-zinc-500 mt-0.5">Attr. Revenue</p>
+                          </div>
+                          <div className="rounded-lg bg-zinc-900 border border-zinc-800 p-3 text-center">
+                            <TrendingUp className="h-3.5 w-3.5 mx-auto mb-1.5 text-pink-400" />
+                            <p className="text-lg font-semibold tabular-nums text-pink-400">
+                              {c.conversionRate}%
+                            </p>
+                            <p className="text-[10px] text-zinc-500 mt-0.5">Conv. Rate</p>
+                          </div>
+                        </div>
+                      )}
 
                       {/* AI Brief */}
                       {c.aiBrief && (

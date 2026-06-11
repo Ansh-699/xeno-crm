@@ -33,8 +33,10 @@ const CHANNEL_CONTACT_FIELD: Record<string, "phone" | "email"> = {
 // Channel fallback order
 const CHANNEL_FALLBACK_ORDER = ["whatsapp", "email", "sms", "rcs"];
 
+const BRAND = process.env.BRAND_NAME || "Brewcraft";
+
 // Merge-field hydration
-function hydrateTemplate(
+export function hydrateTemplate(
   template: string,
   data: Record<string, string | number | null | undefined>
 ): string {
@@ -45,7 +47,7 @@ function hydrateTemplate(
         case "name":
           return "there";
         case "top_product":
-          return "a Brewcraft favourite";
+          return `a ${BRAND} favourite`;
         case "city":
           return "";
         case "days_since_last_order":
@@ -95,12 +97,20 @@ export async function launchCampaign(input: LaunchInput): Promise<LaunchResult> 
   // 1. Idempotency check
   const existing = await prisma.campaign.findUnique({
     where: { launchToken },
+    include: {
+      communications: { select: { channel: true } },
+    },
   });
   if (existing) {
+    const dist: Record<string, number> = {};
+    for (const comm of existing.communications) {
+      dist[comm.channel] = (dist[comm.channel] || 0) + 1;
+    }
     return {
       campaignId: existing.id,
       totalRecipients: existing.totalRecipients,
       exclusions: { optedOut: 0, noContact: 0, total: 0 },
+      channelDistribution: dist,
     };
   }
 
@@ -152,84 +162,85 @@ export async function launchCampaign(input: LaunchInput): Promise<LaunchResult> 
     );
   }
 
-  // 5. Batch query merge-field data
-  const customerIds = contactable.map((c) => c.id);
-  const { orderStatsMap, topProductMap } = await getMergeFieldData(customerIds);
-
-  // 6. Build template
+  // 5. Build campaign
   const template = messages[channel.toLowerCase()] || messages[Object.keys(messages)[0]] || "";
   const callbackUrl = process.env.CALLBACK_URL || "http://localhost:3001/api/receipts";
 
-  // 7. Create everything in one transaction
-  const result = await prisma.$transaction(async (tx) => {
-    const campaign = await tx.campaign.create({
-      data: {
-        name,
-        segmentId,
-        goal: goal || null,
-        status: "queued",
-        messages: messages as any,
-        channelStrategy: "single",
-        channel: channel.toLowerCase(),
-        totalRecipients: contactable.length,
-        launchToken,
-      },
-    });
-
-    const commsData = contactable.map((customer) => {
-      const stats = orderStatsMap.get(customer.id);
-      const daysSinceLastOrder = stats?.lastOrder
-        ? Math.floor((Date.now() - new Date(stats.lastOrder).getTime()) / 86400000)
-        : null;
-
-      const content = hydrateTemplate(template, {
-        name: customer.name,
-        city: customer.city,
-        top_product: topProductMap.get(customer.id) || null,
-        total_orders: stats?.totalOrders ?? null,
-        days_since_last_order: daysSinceLastOrder,
-      });
-
-      const destination = contactField === "email" ? customer.email! : customer.phone!;
-
-      return {
-        customerId: customer.id,
-        channel: channel.toLowerCase(),
-        destination,
-        content,
-        campaignId: campaign.id,
-      };
-    });
-
-    await tx.communication.createMany({ data: commsData });
-
-    const createdComms = await tx.communication.findMany({
-      where: { campaignId: campaign.id },
-      select: { id: true, channel: true, destination: true, content: true },
-    });
-
-    const outboxData = createdComms.map((comm) => ({
-      eventType: "SEND_MESSAGE",
-      aggregateId: comm.id,
-      campaignId: campaign.id,
-      payload: {
-        communication_id: comm.id,
-        channel: comm.channel,
-        destination: comm.destination,
-        content: comm.content,
-        idempotency_key: `${campaign.id}:${comm.id}`,
-        callback_url: callbackUrl,
-      },
-      status: "PENDING",
-    }));
-
-    await tx.outbox.createMany({ data: outboxData });
-
-    return campaign;
+  const campaign = await prisma.campaign.create({
+    data: {
+      name,
+      segmentId,
+      goal: goal || null,
+      status: "queued",
+      messages: messages as any,
+      channelStrategy: "single",
+      channel: channel.toLowerCase(),
+      totalRecipients: contactable.length,
+      launchToken,
+    },
   });
 
+  // 6. Process in chunks of 1000 to prevent memory spikes
+  const CHUNK_SIZE = 1000;
+  for (let i = 0; i < contactable.length; i += CHUNK_SIZE) {
+    const chunk = contactable.slice(i, i + CHUNK_SIZE);
+    const chunkCustomerIds = chunk.map((c) => c.id);
+    const { orderStatsMap, topProductMap } = await getMergeFieldData(chunkCustomerIds);
+
+    await prisma.$transaction(async (tx) => {
+      const commsData = chunk.map((customer) => {
+        const stats = orderStatsMap.get(customer.id);
+        const daysSinceLastOrder = stats?.lastOrder
+          ? Math.floor((Date.now() - new Date(stats.lastOrder).getTime()) / 86400000)
+          : null;
+
+        const content = hydrateTemplate(template, {
+          name: customer.name,
+          city: customer.city,
+          top_product: topProductMap.get(customer.id) || null,
+          total_orders: stats?.totalOrders ?? null,
+          days_since_last_order: daysSinceLastOrder,
+        });
+
+        const destination = contactField === "email" ? customer.email! : customer.phone!;
+
+        return {
+          customerId: customer.id,
+          channel: channel.toLowerCase(),
+          destination,
+          content,
+          campaignId: campaign.id,
+        };
+      });
+
+      await tx.communication.createMany({ data: commsData });
+
+      const createdComms = await tx.communication.findMany({
+        where: { campaignId: campaign.id, customerId: { in: chunkCustomerIds } },
+        select: { id: true, channel: true, destination: true, content: true },
+      });
+
+      const outboxData = createdComms.map((comm) => ({
+        eventType: "SEND_MESSAGE",
+        aggregateId: comm.id,
+        campaignId: campaign.id,
+        payload: {
+          communication_id: comm.id,
+          channel: comm.channel,
+          destination: comm.destination,
+          content: comm.content,
+          idempotency_key: `${campaign.id}:${comm.id}`,
+          callback_url: callbackUrl,
+        },
+        status: "PENDING",
+      }));
+
+      await tx.outbox.createMany({ data: outboxData });
+    });
+  }
+
   return {
-    campaignId: result.id,
+    campaignId: campaign.id,
     totalRecipients: contactable.length,
     exclusions: {
       optedOut: optedOutCount,
@@ -313,82 +324,84 @@ async function launchPerCustomer(
     );
   }
 
-  // Get merge-field data
-  const customerIds = resolved.map((r) => r.customer.id);
-  const { orderStatsMap, topProductMap } = await getMergeFieldData(customerIds);
-
   const callbackUrl = process.env.CALLBACK_URL || "http://localhost:3001/api/receipts";
 
-  // Create in transaction
-  const result = await prisma.$transaction(async (tx) => {
-    const campaign = await tx.campaign.create({
-      data: {
-        name,
-        segmentId,
-        goal: goal || null,
-        status: "queued",
-        messages: messages as any,
-        channelStrategy: "per_customer",
-        channel: null,
-        totalRecipients: resolved.length,
-        launchToken,
-        aiDecisionLog: channelDistribution as any,
-      },
-    });
-
-    const commsData = resolved.map(({ customer, channel, destination }) => {
-      const stats = orderStatsMap.get(customer.id);
-      const daysSinceLastOrder = stats?.lastOrder
-        ? Math.floor((Date.now() - new Date(stats.lastOrder).getTime()) / 86400000)
-        : null;
-
-      const template = messages[channel] || "";
-      const content = hydrateTemplate(template, {
-        name: customer.name,
-        city: customer.city,
-        top_product: topProductMap.get(customer.id) || null,
-        total_orders: stats?.totalOrders ?? null,
-        days_since_last_order: daysSinceLastOrder,
-      });
-
-      return {
-        customerId: customer.id,
-        channel,
-        destination,
-        content,
-        campaignId: campaign.id,
-      };
-    });
-
-    await tx.communication.createMany({ data: commsData });
-
-    const createdComms = await tx.communication.findMany({
-      where: { campaignId: campaign.id },
-      select: { id: true, channel: true, destination: true, content: true },
-    });
-
-    const outboxData = createdComms.map((comm) => ({
-      eventType: "SEND_MESSAGE",
-      aggregateId: comm.id,
-      campaignId: campaign.id,
-      payload: {
-        communication_id: comm.id,
-        channel: comm.channel,
-        destination: comm.destination,
-        content: comm.content,
-        idempotency_key: `${campaign.id}:${comm.id}`,
-        callback_url: callbackUrl,
-      },
-      status: "PENDING",
-    }));
-
-    await tx.outbox.createMany({ data: outboxData });
-
-    return campaign;
+  // Create campaign first
+  const campaign = await prisma.campaign.create({
+    data: {
+      name,
+      segmentId,
+      goal: goal || null,
+      status: "queued",
+      messages: messages as any,
+      channelStrategy: "per_customer",
+      channel: null,
+      totalRecipients: resolved.length,
+      launchToken,
+      aiDecisionLog: channelDistribution as any,
+    },
   });
 
+  // Process in chunks
+  const CHUNK_SIZE = 1000;
+  for (let i = 0; i < resolved.length; i += CHUNK_SIZE) {
+    const chunk = resolved.slice(i, i + CHUNK_SIZE);
+    const chunkCustomerIds = chunk.map((r) => r.customer.id);
+    const { orderStatsMap, topProductMap } = await getMergeFieldData(chunkCustomerIds);
+
+    await prisma.$transaction(async (tx) => {
+      const commsData = chunk.map(({ customer, channel, destination }) => {
+        const stats = orderStatsMap.get(customer.id);
+        const daysSinceLastOrder = stats?.lastOrder
+          ? Math.floor((Date.now() - new Date(stats.lastOrder).getTime()) / 86400000)
+          : null;
+
+        const template = messages[channel] || "";
+        const content = hydrateTemplate(template, {
+          name: customer.name,
+          city: customer.city,
+          top_product: topProductMap.get(customer.id) || null,
+          total_orders: stats?.totalOrders ?? null,
+          days_since_last_order: daysSinceLastOrder,
+        });
+
+        return {
+          customerId: customer.id,
+          channel,
+          destination,
+          content,
+          campaignId: campaign.id,
+        };
+      });
+
+      await tx.communication.createMany({ data: commsData });
+
+      const createdComms = await tx.communication.findMany({
+        where: { campaignId: campaign.id, customerId: { in: chunkCustomerIds } },
+        select: { id: true, channel: true, destination: true, content: true },
+      });
+
+      const outboxData = createdComms.map((comm) => ({
+        eventType: "SEND_MESSAGE",
+        aggregateId: comm.id,
+        campaignId: campaign.id,
+        payload: {
+          communication_id: comm.id,
+          channel: comm.channel,
+          destination: comm.destination,
+          content: comm.content,
+          idempotency_key: `${campaign.id}:${comm.id}`,
+          callback_url: callbackUrl,
+        },
+        status: "PENDING",
+      }));
+
+      await tx.outbox.createMany({ data: outboxData });
+    });
+  }
+
   return {
-    campaignId: result.id,
+    campaignId: campaign.id,
     totalRecipients: resolved.length,
     exclusions: {
       optedOut: optedOutCount,
@@ -402,12 +415,18 @@ async function launchPerCustomer(
 // ─── Shared Helpers ────────────────────────────────────────────────────────────
 
 async function getMergeFieldData(customerIds: string[]) {
-  const orderStats = await prisma.order.groupBy({
-    by: ["customerId"],
-    where: { customerId: { in: customerIds } },
-    _count: { id: true },
-    _max: { orderedAt: true },
-  });
+  const [orderStats, orders] = await Promise.all([
+    prisma.order.groupBy({
+      by: ["customerId"],
+      where: { customerId: { in: customerIds } },
+      _count: { id: true },
+      _max: { orderedAt: true },
+    }),
+    prisma.order.findMany({
+      where: { customerId: { in: customerIds } },
+      select: { customerId: true, products: true },
+    }),
+  ]);
 
   const orderStatsMap = new Map(
     orderStats.map((s) => [
@@ -416,22 +435,32 @@ async function getMergeFieldData(customerIds: string[]) {
     ])
   );
 
-  const topProducts = await prisma.order.findMany({
-    where: { customerId: { in: customerIds } },
-    select: { customerId: true, products: true },
-    orderBy: { orderedAt: "desc" },
-  });
-
   const topProductMap = new Map<string, string>();
-  for (const order of topProducts) {
-    if (!topProductMap.has(order.customerId)) {
-      const products = order.products as any;
-      if (Array.isArray(products) && products.length > 0) {
-        topProductMap.set(order.customerId, products[0]);
-      } else if (typeof products === "string") {
-        topProductMap.set(order.customerId, products);
+  const productFrequencyMap = new Map<string, Map<string, number>>();
+
+  for (const order of orders) {
+    const cid = order.customerId;
+    if (!productFrequencyMap.has(cid)) productFrequencyMap.set(cid, new Map());
+    const freq = productFrequencyMap.get(cid)!;
+
+    const products = order.products as any;
+    const items = Array.isArray(products) ? products : typeof products === "string" ? [products] : [];
+
+    for (const item of items) {
+      freq.set(item, (freq.get(item) || 0) + 1);
+    }
+  }
+
+  for (const [cid, freq] of productFrequencyMap.entries()) {
+    let top: string | null = null;
+    let max = 0;
+    for (const [item, count] of freq.entries()) {
+      if (count > max) {
+        max = count;
+        top = item;
       }
     }
+    if (top) topProductMap.set(cid, top);
   }
 
   return { orderStatsMap, topProductMap };

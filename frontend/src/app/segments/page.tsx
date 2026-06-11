@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch, apiStream } from "@/lib/api";
-import { Target, Users, Calendar, Sparkles, Loader2, Plus, ArrowRight } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { apiFetch, apiStream, aiApiFetch } from "@/lib/api";
+import { Target, Users, Calendar, Sparkles, Loader2, Plus, ArrowRight, Megaphone } from "lucide-react";
+import Link from "next/link";
 
 interface Segment {
   id: string;
@@ -51,7 +53,7 @@ export default function SegmentsPage() {
 
   async function loadSuggestions() {
     try {
-      const data = await apiFetch<{ suggestions: SuggestedSegment[] }>("/api/insights/suggested-segments");
+      const data = await aiApiFetch<{ suggestions: SuggestedSegment[] }>("/api/insights/suggested-segments");
       setSuggestions(data.suggestions || []);
     } catch {
       setSuggestions([]);
@@ -265,12 +267,21 @@ export default function SegmentsPage() {
                       </span>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handlePreview(seg.id)}
-                    className="px-3 py-1.5 rounded-lg bg-zinc-800 text-xs font-medium hover:bg-zinc-700 transition-colors"
-                  >
-                    {preview?.id === seg.id ? "Hide" : "Preview"}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handlePreview(seg.id)}
+                      className="px-3 py-1.5 rounded-lg bg-zinc-800 text-xs font-medium hover:bg-zinc-700 transition-colors"
+                    >
+                      {preview?.id === seg.id ? "Hide" : "Preview"}
+                    </button>
+                    <Link
+                      href={`/agent?q=Launch a campaign to segment ${seg.id}`}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600/10 text-violet-400 text-xs font-medium hover:bg-violet-600/20 transition-colors border border-violet-900/30"
+                    >
+                      <Megaphone className="h-3.5 w-3.5" />
+                      Launch with AI
+                    </Link>
+                  </div>
                 </div>
 
                 {/* Filter DSL display */}

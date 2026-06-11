@@ -236,9 +236,12 @@ router.post("/import", upload.single("file"), async (req: Request, res: Response
       return;
     }
 
-    const records = rawRows
-      .map((record, index) => {
-        const rowNumber = index + 2;
+    const records: any[] = [];
+    const importErrors: any[] = [];
+
+    rawRows.forEach((record, index) => {
+      const rowNumber = index + 2;
+      try {
         const nameSource = nameHeader ? getRowSampleValue(record, nameHeader) : null;
         const fallbackNameSource =
           !nameSource && !nameHeader
@@ -255,35 +258,27 @@ router.post("/import", upload.single("file"), async (req: Request, res: Response
         const attributesValue = attributesHeader ? record[attributesHeader] : null;
 
         if (!name) {
-          return null;
+          throw new Error("Missing name");
         }
 
-        return {
+        records.push({
           name,
           email,
           phone,
           city,
           optedOut: parseOptedOut(optedOutValue),
           attributes: parseAttributes(attributesValue, rowNumber),
-        };
-      })
-      .filter(
-        (
-          record,
-        ): record is {
-          name: string;
-          email: string | null;
-          phone: string | null;
-          city: string | null;
-          optedOut: boolean;
-          attributes: Prisma.InputJsonValue;
-        } => record !== null
-      );
+        });
+      } catch (err: any) {
+        importErrors.push({ row: rowNumber, error: err.message, data: record });
+      }
+    });
 
     if (records.length === 0) {
       res.status(400).json({
         error: "CSV could not be mapped to any importable customer records",
         analysis,
+        errors: importErrors,
       });
       return;
     }
@@ -296,6 +291,9 @@ router.post("/import", upload.single("file"), async (req: Request, res: Response
     res.status(201).json({
       count: result.count,
       analysis,
+      imported: result.count,
+      skipped: rawRows.length - result.count,
+      errors: importErrors,
     });
   } catch (error) {
     console.log("Error in POST /api/customers/import:", error);

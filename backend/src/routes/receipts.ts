@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { Prisma } from "@prisma/client";
 import prisma from "../lib/prisma";
 import { incrementCampaignCounter } from "../lib/redis";
 
@@ -31,6 +32,13 @@ router.post("/", async (req: Request, res: Response) => {
 
     if (!communicationId || !status) {
       res.status(400).json({ error: "Missing communicationId or status" });
+      return;
+    }
+
+    // Step 0: Validate status
+    const ALLOWED = new Set(["sent", "delivered", "opened", "read", "clicked", "failed"]);
+    if (!ALLOWED.has(status)) {
+      res.status(400).json({ error: "Unknown status" });
       return;
     }
 
@@ -69,35 +77,40 @@ router.post("/", async (req: Request, res: Response) => {
       throw err;
     }
 
-    // Step 4: Update communication status
+    // Step 4: Update communication status atomically with monotonicity check
     const tsField = STATUS_TIMESTAMP_FIELD[status];
-    const updateData: any = {};
-    if (tsField) {
-      updateData[tsField] = eventTimestamp;
-    }
+    const newRank = STATUS_RANK[status] ?? 0;
 
     if (status === "failed") {
-      // Terminal override
-      updateData.status = "failed";
       await prisma.communication.update({
         where: { id: communicationId },
-        data: updateData,
+        data: {
+          status: "failed",
+          failedAt: eventTimestamp,
+        },
       });
     } else {
-      // Monotonic rank update: only advance if new rank > current rank
-      const newRank = STATUS_RANK[status] ?? 0;
-      const currentRank = STATUS_RANK[comm.status] ?? 0;
-
-      if (newRank > currentRank) {
-        updateData.status = status;
-      }
-
-      if (Object.keys(updateData).length > 0) {
-        await prisma.communication.update({
-          where: { id: communicationId },
-          data: updateData,
-        });
-      }
+      // Enforce monotonicity in the DB so out-of-order callbacks can't regress status.
+      // The timestamp column is injected as a raw identifier (tsField comes from a fixed
+      // whitelist), while values stay bound params. 'opened'/'read' share rank 3.
+      const tsCol = Prisma.raw(`"${tsField ?? "updatedAt"}"`);
+      await prisma.$executeRaw`
+        UPDATE "Communication"
+        SET status = ${status},
+            ${tsCol} = ${eventTimestamp},
+            "updatedAt" = NOW()
+        WHERE id = ${communicationId}
+          AND status != 'failed'
+          AND ${newRank} > (CASE status
+              WHEN 'pending' THEN 0
+              WHEN 'sent' THEN 1
+              WHEN 'delivered' THEN 2
+              WHEN 'opened' THEN 3
+              WHEN 'read' THEN 3
+              WHEN 'clicked' THEN 4
+              ELSE 0
+            END)
+      `;
     }
 
     // Step 5: HINCRBY + PUBLISH (for new events only — we already passed P2002 check)

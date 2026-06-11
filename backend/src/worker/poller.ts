@@ -13,6 +13,7 @@ import { Client } from "pg";
 import { PrismaClient } from "@prisma/client";
 import Redis from "ioredis";
 import { generateCampaignBrief } from "../lib/ai/brief-generator";
+import { incrementCampaignCounter } from "../lib/redis";
 
 const prisma = new PrismaClient();
 const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
@@ -86,7 +87,7 @@ async function poll(): Promise<void> {
 
     // Mark as PROCESSING
     await prisma.$executeRaw`
-      UPDATE "Outbox" SET status = 'PROCESSING' WHERE id = ANY(${ids}::bigint[])
+      UPDATE "Outbox" SET status = 'PROCESSING', "processingAt" = NOW() WHERE id = ANY(${ids}::bigint[])
     `;
 
     // Build messages array for channel service
@@ -165,11 +166,11 @@ async function poll(): Promise<void> {
             data: { status: "failed", failedAt: new Date() },
           });
 
-          // HINCRBY Redis failed
-          await redis.hincrby(`campaign:${row.campaignId}`, "failed", 1);
+          // Publish failed event
+          await incrementCampaignCounter(row.campaignId, "failed");
         } else {
-          // Exponential backoff: 5s * 2^attempts
-          const backoffMs = 5000 * Math.pow(2, newAttempts);
+          // Exponential backoff: 5s * 2^attempts, max 5 minutes
+          const backoffMs = Math.min(5000 * Math.pow(2, newAttempts), 300000);
           const nextRetry = new Date(Date.now() + backoffMs);
 
           await prisma.$executeRaw`
@@ -190,13 +191,70 @@ async function poll(): Promise<void> {
 // ---- Reaper: reset stale PROCESSING rows ----
 async function reap(): Promise<void> {
   const staleThreshold = new Date(Date.now() - STALE_THRESHOLD_MS);
-  const result = await prisma.$executeRaw`
-    UPDATE "Outbox"
-    SET status = 'PENDING'
-    WHERE status = 'PROCESSING' AND "createdAt" < ${staleThreshold}
-  `;
-  if (typeof result === "number" && result > 0) {
-    console.log(`[reaper] Reset ${result} stale PROCESSING rows`);
+
+  // 1. Identify stale rows
+  const staleRows = await prisma.outbox.findMany({
+    where: {
+      status: "PROCESSING",
+      processingAt: { lt: staleThreshold },
+    },
+    select: { id: true, attempts: true, maxAttempts: true, aggregateId: true, campaignId: true },
+  });
+
+  if (staleRows.length === 0) return;
+
+  console.log(`[reaper] Found ${staleRows.length} stale PROCESSING rows`);
+
+  for (const row of staleRows) {
+    const newAttempts = row.attempts + 1;
+    const isDead = newAttempts >= row.maxAttempts;
+
+    if (isDead) {
+      // Mark as DEAD_LETTER
+      await prisma.outbox.update({
+        where: { id: row.id },
+        data: {
+          status: "DEAD_LETTER",
+          attempts: newAttempts,
+          error: "Stale processing timeout (reaper)",
+          processingAt: null,
+        },
+      });
+
+      // Write synthetic failed CommEvent
+      try {
+        await prisma.commEvent.create({
+          data: {
+            communicationId: row.aggregateId,
+            status: "failed",
+            timestamp: new Date(),
+          },
+        });
+      } catch (_) {}
+
+      // Update Communication status
+      await prisma.communication.update({
+        where: { id: row.aggregateId },
+        data: { status: "failed", failedAt: new Date() },
+      });
+
+      // Publish failed event
+      await incrementCampaignCounter(row.campaignId, "failed");
+    } else {
+      // Reset to PENDING with backoff
+      const backoffMs = Math.min(5000 * Math.pow(2, newAttempts), 300000);
+      const nextRetry = new Date(Date.now() + backoffMs);
+
+      await prisma.outbox.update({
+        where: { id: row.id },
+        data: {
+          status: "PENDING",
+          attempts: newAttempts,
+          nextRetryAt: nextRetry,
+          processingAt: null,
+        },
+      });
+    }
   }
 }
 
@@ -247,14 +305,17 @@ async function checkCompletion(): Promise<void> {
         `[completion] Campaign ${campaign.id} → ${newStatus}`
       );
 
-      // Generate AI performance brief asynchronously
-      generateCampaignBrief(campaign.id)
-        .then((brief) => {
-          console.log(`[completion] Auto-generated AI performance brief for campaign ${campaign.id}`);
-        })
-        .catch((err) => {
-          console.error(`[completion] Failed to auto-generate AI brief for campaign ${campaign.id}:`, err.message);
-        });
+      // Generate AI performance brief with a delay (30s)
+      // to allow engagement callbacks (delivered, opened, clicked) to arrive.
+      setTimeout(() => {
+        generateCampaignBrief(campaign.id)
+          .then((brief) => {
+            console.log(`[completion] Auto-generated AI performance brief for campaign ${campaign.id}`);
+          })
+          .catch((err) => {
+            console.error(`[completion] Failed to auto-generate AI brief for campaign ${campaign.id}:`, err.message);
+          });
+      }, 30000);
 
       // Publish completion event
       await redis.publish(

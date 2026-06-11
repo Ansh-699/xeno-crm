@@ -8,6 +8,7 @@ import segmentsRouter from "./routes/segments";
 import agentRouter from "./routes/agent";
 import analyticsRouter from "./routes/analytics";
 import insightsRouter from "./routes/insights";
+import statsRouter from "./routes/stats";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -27,6 +28,7 @@ app.use("/api/segments", segmentsRouter);
 app.use("/api/agent", agentRouter);
 app.use("/api/analytics", analyticsRouter);
 app.use("/api/insights", insightsRouter);
+app.use("/api/stats", statsRouter);
 
 app.listen(PORT, () => {
   console.log(`Backend server running on port ${PORT}`);

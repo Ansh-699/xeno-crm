@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, aiApiFetch } from "@/lib/api";
 import {
   Users,
   Target,
@@ -38,16 +38,16 @@ export default function DashboardPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [segs, camps] = await Promise.all([
-          apiFetch<any[]>("/api/segments"),
+        const [statsData, camps] = await Promise.all([
+          apiFetch<Stats>("/api/stats"),
           apiFetch<any[]>("/api/campaigns"),
         ]);
         setCampaigns(camps.slice(0, 5));
         setStats({
-          customers: segs.reduce((sum, s) => sum + (s.customerCount || 0), 0),
-          segments: segs.length,
-          campaigns: camps.length,
-          deliveryRate: camps.length > 0 ? 88 : 0,
+          customers: statsData.customers || 0,
+          segments: statsData.segments || 0,
+          campaigns: statsData.campaigns || 0,
+          deliveryRate: statsData.deliveryRate || 0,
         });
       } catch {
         setStats({ customers: 0, segments: 0, campaigns: 0, deliveryRate: 0 });
@@ -61,7 +61,7 @@ export default function DashboardPage() {
   useEffect(() => {
     async function loadInsights() {
       try {
-        const data = await apiFetch<{ insights: AIInsight[] }>("/api/insights");
+        const data = await aiApiFetch<{ insights: AIInsight[] }>("/api/insights");
         setInsights(data.insights || []);
       } catch {
         setInsights([]);

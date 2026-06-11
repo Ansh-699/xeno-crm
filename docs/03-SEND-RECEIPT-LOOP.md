@@ -31,7 +31,7 @@ Only covers PENDING rows. PROCESSING is deliberately excluded (the reaper handle
 2. **HTTP POST batch of 50** to Channel Service `/send` — OUTSIDE the transaction (no lock held during network I/O)
 3. **On success:** mark `SENT`, set `processedAt`. If Campaign.status is still `queued`, set it to `sending`.
 4. **On failure:**
-   - If `attempts < maxAttempts`: reset to `PENDING`, set `nextRetryAt` with exponential backoff (`min(2^attempts * 1000ms, 300_000ms)`)
+   - If `attempts < maxAttempts`: reset to `PENDING`, set `nextRetryAt` with exponential backoff (`min(5000ms * 2^attempts, 300_000ms)`)
    - If `attempts >= maxAttempts`: mark `DEAD_LETTER`. THEN: write a synthetic `CommEvent(status='failed')` for the affected communication, update `Communication.status = 'failed'` + `failedAt`, HINCRBY Redis `failed` counter. This prevents zombie communications stuck at "pending" forever.
 5. **Wakeup:** `pg_notify('outbox_new')` trigger via a dedicated `pg.Client` connection (Prisma pool cannot do LISTEN) + fallback 5-second polling interval.
 6. **After each batch + on a periodic 10-second sweep:** check campaign completion (see Completion section below).
@@ -42,8 +42,8 @@ Runs on worker startup + every 60 seconds:
 ```sql
 UPDATE outbox SET status = 'PENDING', next_retry_at = NOW()
 WHERE status = 'PROCESSING'
-  AND processed_at IS NULL
-  AND created_at < NOW() - INTERVAL '60 seconds';
+AND "processingAt" < NOW() - INTERVAL '60 seconds';
+```
 ```
 
 Handles the case where the worker crashes after claiming rows but before completing the HTTP.

@@ -18,6 +18,10 @@ model Customer {
   createdAt      DateTime        @default(now())
   orders         Order[]
   communications Communication[]
+
+  @@index([city])
+  @@index([optedOut])
+  @@index([phone])
 }
 
 model Order {
@@ -29,8 +33,14 @@ model Order {
   channel    String
   orderedAt  DateTime
 
+  attributedCampaignId      String?
+  attributedCommunicationId String?
+  attributedAt              DateTime?
+
   @@index([customerId])
   @@index([orderedAt])
+  @@index([customerId, orderedAt])
+  @@index([attributedCampaignId])
 }
 
 model Segment {
@@ -39,7 +49,6 @@ model Segment {
   description   String?
   filters       Json
   aiGenerated   Boolean  @default(false)
-  customerCount Int      @default(0)
   campaigns     Campaign[]
   createdAt     DateTime @default(now())
 }
@@ -109,12 +118,14 @@ model Outbox {
   attempts    Int      @default(0)
   maxAttempts Int      @default(5)
   nextRetryAt DateTime @default(now())
+  processingAt DateTime?
   processedAt DateTime?
   error       String?
   createdAt   DateTime @default(now())
 
   @@index([nextRetryAt])
   @@index([campaignId, status])
+  @@index([aggregateId])
 }
 
 model AgentRun {

@@ -15,11 +15,33 @@ export async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> 
 export function apiStream(path: string, body: unknown) {
   return fetch(`${API_BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...aiHeaders() },
     body: JSON.stringify(body),
   });
 }
 
 export function sseUrl(path: string) {
   return `${API_BASE}${path}`;
+}
+
+/** Read BYOK settings from localStorage and return headers for AI endpoints. */
+export function aiHeaders(): Record<string, string> {
+  try {
+    const s = JSON.parse(localStorage.getItem("xeno.ai") || "{}");
+    const h: Record<string, string> = {};
+    if (s.provider) h["x-llm-provider"] = s.provider;
+    if (s.apiKey) h["x-llm-api-key"] = s.apiKey;
+    if (s.model) h["x-llm-model"] = s.model;
+    return h;
+  } catch {
+    return {};
+  }
+}
+
+/** apiFetch variant that attaches AI credential headers (for insights endpoints). */
+export async function aiApiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
+  return apiFetch<T>(path, {
+    ...opts,
+    headers: { ...aiHeaders(), ...opts?.headers },
+  });
 }

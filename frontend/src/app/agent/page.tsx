@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiStream } from "@/lib/api";
 import { Send, Bot, User, Wrench, CheckCircle, XCircle, Loader2, AlertTriangle } from "lucide-react";
+import { AISettingsPanel } from "@/components/AISettings";
 
 interface Message {
   id: string;
@@ -15,39 +17,49 @@ interface Message {
 }
 
 export default function AgentPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <AgentContent />
+    </Suspense>
+  );
+}
+
+function AgentContent() {
+  const searchParams = useSearchParams();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+  const [hasAutoSent, setHasAutoSent] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
+    const q = searchParams.get("q");
+    if (q && !hasAutoSent && !streaming && messages.length === 0) {
+      setHasAutoSent(true);
+      autoSendMessage(q);
+    }
+  }, [searchParams, hasAutoSent, streaming, messages]);
 
-  async function sendMessage() {
-    if (!input.trim() || streaming) return;
-    const userMsg = input.trim();
-    setInput("");
-
+  async function autoSendMessage(text: string) {
+    const userMsg = text.trim();
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
       content: userMsg,
     };
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages([userMessage]);
     setStreaming(true);
 
     try {
-      const res = await apiStream("/api/agent/run", {
-        runId: runId || undefined,
-        message: userMsg,
-      });
-
+      const res = await apiStream("/api/agent/run", { message: userMsg });
       if (!res.ok) {
-        throw new Error("Failed to start agent run");
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 400 && body.error?.includes("credentials")) { setShowSettings(true); throw new Error(body.error); }
+        throw new Error(body.error || "Failed to start agent run");
       }
 
       const reader = res.body!.getReader();
@@ -56,17 +68,14 @@ export default function AgentPage() {
       let assistantText = "";
       let assistantMsgId = crypto.randomUUID();
 
-      // Add placeholder assistant message
       setMessages((prev) => [...prev, { id: assistantMsgId, role: "assistant", content: "" }]);
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
-
         for (const line of lines) {
           if (!line.trim()) continue;
           try {
@@ -74,13 +83,8 @@ export default function AgentPage() {
             handleEvent(event, assistantMsgId, assistantText, (text) => {
               assistantText = text;
             });
-
-            if (event.type === "run_started" && event.runId) {
-              setRunId(event.runId);
-            }
-          } catch {
-            // Skip non-JSON lines
-          }
+            if (event.type === "run_started" && event.runId) setRunId(event.runId);
+          } catch {}
         }
       }
     } catch (err: any) {
@@ -92,6 +96,10 @@ export default function AgentPage() {
       setStreaming(false);
     }
   }
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages]);
 
   function handleEvent(
     event: any,
@@ -155,6 +163,66 @@ export default function AgentPage() {
     }
   }
 
+  async function sendMessage() {
+    if (!input.trim() || streaming) return;
+    const userMsg = input.trim();
+    setInput("");
+
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: userMsg,
+    };
+    setMessages((prev) => [...prev, userMessage]);
+    setStreaming(true);
+
+    try {
+      const res = await apiStream("/api/agent/run", {
+        runId: runId || undefined,
+        message: userMsg,
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 400 && body.error?.includes("credentials")) { setShowSettings(true); throw new Error(body.error); }
+        throw new Error(body.error || "Failed to start agent run");
+      }
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let assistantText = "";
+      let assistantMsgId = crypto.randomUUID();
+
+      setMessages((prev) => [...prev, { id: assistantMsgId, role: "assistant", content: "" }]);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line);
+            handleEvent(event, assistantMsgId, assistantText, (text) => {
+              assistantText = text;
+            });
+            if (event.type === "run_started" && event.runId) setRunId(event.runId);
+          } catch {}
+        }
+      }
+    } catch (err: any) {
+      setMessages((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), role: "assistant", content: `Error: ${err.message}` },
+      ]);
+    } finally {
+      setStreaming(false);
+    }
+  }
+
   async function handleConfirmation(approved: boolean) {
     if (!runId) return;
     setAwaitingConfirmation(false);
@@ -175,11 +243,9 @@ export default function AgentPage() {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
-
         for (const line of lines) {
           if (!line.trim()) continue;
           try {
@@ -204,22 +270,31 @@ export default function AgentPage() {
     setMessages([]);
     setRunId(null);
     setAwaitingConfirmation(false);
+    setHasAutoSent(false);
     inputRef.current?.focus();
   }
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
+      {showSettings && <AISettingsPanel onClose={() => setShowSettings(false)} />}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">AI Command Center</h1>
-        <button
-          onClick={newConversation}
-          className="px-3 py-1.5 rounded-lg bg-zinc-800 text-xs font-medium hover:bg-zinc-700 transition-colors"
-        >
-          New Conversation
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowSettings(true)}
+            className="px-3 py-1.5 rounded-lg bg-zinc-800 text-xs font-medium hover:bg-zinc-700 transition-colors"
+          >
+            Settings
+          </button>
+          <button
+            onClick={newConversation}
+            className="px-3 py-1.5 rounded-lg bg-zinc-800 text-xs font-medium hover:bg-zinc-700 transition-colors"
+          >
+            New Conversation
+          </button>
+        </div>
       </div>
 
-      {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin space-y-4 pb-4">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center">
@@ -250,7 +325,6 @@ export default function AgentPage() {
         )}
       </div>
 
-      {/* Input */}
       <div className="border-t border-zinc-800 pt-4">
         <div className="flex items-center gap-3">
           <input
@@ -320,7 +394,6 @@ function MessageBubble({
     );
   }
 
-  // Confirmation dialog
   if (message.isConfirmation && message.confirmationData) {
     return (
       <div className="flex items-start gap-3">
@@ -358,7 +431,6 @@ function MessageBubble({
     );
   }
 
-  // Regular assistant message
   if (!message.content) return null;
 
   return (
@@ -377,7 +449,6 @@ function ToolResultDisplay({ name, output }: { name: string; output: any }) {
   const [expanded, setExpanded] = useState(false);
   const data = typeof output === "string" ? tryParse(output) : output;
 
-  // Show a nice summary for common tools
   let summary = "";
   if (data?.success && data?.message) {
     summary = data.message;

@@ -1,6 +1,6 @@
 # AI Agent Layer
 
-## Tools (9 total)
+## Tools (11 total)
 
 | # | Name | Description | requiresConfirmation |
 |---|------|-------------|---------------------|
@@ -10,9 +10,11 @@
 | 4 | `preview_audience` | Preview customers in a segment with sample profiles + count. | false |
 | 5 | `draft_messages` | Generate channel-specific messages with merge fields for a segment. | false |
 | 6 | `recommend_channels` | Recommend best channel per customer based on engagement history. Upserts ChannelDecision. | false |
-| 7 | `launch_campaign` | Launch a campaign to a segment. Requires launchToken for idempotency. | **true** |
+| 7 | `launch_campaign` | Launch a campaign to a segment. Requires stable launchToken (semantic hash) for idempotency. | **true** |
 | 8 | `get_campaign_stats` | Get real-time campaign delivery stats from Redis counters. | false |
-| 9 | `analyze_performance` | Generate AI analysis of campaign results + cross-campaign trends. On-demand. | false |
+| 9 | `analyze_performance` | Generate AI analysis of campaign results. On-demand. | false |
+| 10 | `compare_campaigns` | Compare metrics (delivery, open, click rates) across multiple campaigns. | false |
+| 11 | `get_segment_analytics` | Analyze historical performance of campaigns sent to a segment. | false |
 
 ---
 

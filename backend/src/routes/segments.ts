@@ -29,11 +29,10 @@ router.post("/", async (req: Request, res: Response) => {
         description: description || null,
         filters,
         aiGenerated: aiGenerated || false,
-        customerCount,
       },
     });
 
-    res.status(201).json(segment);
+    res.status(201).json({ ...segment, customerCount });
   } catch (error) {
     console.error("Error in POST /api/segments:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -46,7 +45,14 @@ router.get("/", async (_req: Request, res: Response) => {
     const segments = await prisma.segment.findMany({
       orderBy: { createdAt: "desc" },
     });
-    res.json(segments);
+
+    const enriched = await Promise.all(segments.map(async (seg) => {
+      const where = filtersToWhere(seg.filters as any);
+      const liveCount = await prisma.customer.count({ where });
+      return { ...seg, customerCount: liveCount };
+    }));
+
+    res.json(enriched);
   } catch (error) {
     console.error("Error in GET /api/segments:", error);
     res.status(500).json({ error: "Internal server error" });

@@ -19,7 +19,7 @@ Every item below is a testable assertion. Each must pass before the phase is con
 
 ### Outbox Lifecycle
 - [ ] Campaign launch creates Communications + Outbox rows in a single transaction (both or neither)
-- [ ] launchToken idempotency: second launch with same token returns existing campaign, no duplicate rows
+- [ ] launchToken idempotency: second launch with same stable token (semantic hash) returns existing campaign, no duplicate rows
 - [ ] Poller claims batch with FOR UPDATE SKIP LOCKED, marks PROCESSING, releases lock
 - [ ] Poller sends batch to Channel Service OUTSIDE the transaction (no lock held during HTTP)
 - [ ] On successful send: Outbox rows marked SENT, Campaign.status transitions queued → sending
@@ -28,8 +28,9 @@ Every item below is a testable assertion. Each must pass before the phase is con
 - [ ] No zombie Communications: every Communication eventually reaches a terminal status (via channel callback OR DEAD_LETTER synthetic)
 
 ### Reaper
-- [ ] On worker startup: stuck PROCESSING rows (>60s old) reset to PENDING
+- [ ] On worker startup: stuck PROCESSING rows (processingAt >60s old) reset to PENDING
 - [ ] Every 60s: same sweep runs (catches crashes during runtime)
+- [ ] Reaper never re-sends an in-flight row that was just claimed
 
 ### Channel Service
 - [ ] WhatsApp messages emit: sent → delivered → read → clicked (subset based on probability)
@@ -109,6 +110,8 @@ Every item below is a testable assertion. Each must pass before the phase is con
 ## Phase 4: Frontend
 
 - [ ] Dashboard layout with sidebar navigation renders correctly
+- [ ] Dashboard customer count is accurate (uses COUNT(*))
+- [ ] No hardcoded percentages anywhere in insights or dashboard (Avg Delivery matches Analytics precisely)
 - [ ] Customers page shows data table with search/filter
 - [ ] CSV import creates customers
 - [ ] Segments page: NL input creates segment, shows preview with customer count

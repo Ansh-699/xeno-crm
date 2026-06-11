@@ -1,14 +1,13 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
-import { getClient } from "../lib/ai/claude-provider";
+import { makeProvider, LLMCredentials } from "../lib/ai/llm";
+import { readCreds } from "./agent";
 import { getCampaignStats } from "../lib/redis";
 
 const router = Router();
 
-// Helper to check if the Anthropic API Key is valid / not dummy
-function isApiKeyDummy(): boolean {
-  const key = process.env.ANTHROPIC_API_KEY;
-  return !key || key.trim() === "" || key.startsWith("sk-asDQ") || key.includes("dummy");
+function tryReadCreds(req: Request): LLMCredentials | null {
+  try { return readCreds(req); } catch { return null; }
 }
 
 /**
@@ -16,7 +15,8 @@ function isApiKeyDummy(): boolean {
  * Returns 3-5 actionable recommendations based on current CRM data.
  * Results are generated fresh but can be cached (TTL 5min) in production.
  */
-router.get("/", async (_req: Request, res: Response) => {
+router.get("/", async (req: Request, res: Response) => {
+  const creds = tryReadCreds(req);
   try {
     // Gather data context for AI
     const [
@@ -102,8 +102,7 @@ router.get("/", async (_req: Request, res: Response) => {
 
     let insights: any[] = [];
 
-    if (isApiKeyDummy()) {
-      console.warn("Using high-fidelity mock dashboard insights due to dummy Anthropic API key.");
+    if (!creds) {
       insights = [
         {
           icon: "warning",
@@ -115,7 +114,7 @@ router.get("/", async (_req: Request, res: Response) => {
         {
           icon: "trend_up",
           title: "WhatsApp Channel is Outperforming",
-          body: "WhatsApp message delivery is at 94.8% compared to SMS. Shift budget to WhatsApp for upcoming campaigns.",
+          body: "WhatsApp message delivery is strong compared to SMS. Shift budget to WhatsApp for upcoming campaigns.",
           action: { label: "AI Agent", href: "/agent" },
           priority: "medium",
         },
@@ -125,43 +124,30 @@ router.get("/", async (_req: Request, res: Response) => {
           body: `Delhi has become your top market with over ${topCities.find(c => c.city.toLowerCase() === "delhi")?.count || "500"} customers. Consider launching a regional special offer.`,
           action: { label: "View Customers", href: "/customers" },
           priority: "low",
-        }
+        },
       ];
+      return res.json({ insights, generatedAt: new Date().toISOString(), mock: true });
     } else {
-      const client = getClient();
-      const response = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1024,
+      const provider = makeProvider(creds);
+      const resp = await provider.generate({
         system: `You are an AI marketing advisor embedded in a CRM dashboard for "Brewcraft Coffee", an Indian coffee chain. Generate exactly 3-5 actionable insights based on the current CRM data. Each insight should be a JSON object with:
-  - "icon": one of "trend_up", "warning", "users", "target", "sparkle"  
+  - "icon": one of "trend_up", "warning", "users", "target", "sparkle"
   - "title": a short bold headline (max 8 words)
   - "body": one sentence of actionable advice (max 25 words)
   - "action": optional CTA object with "label" (button text) and "href" (page path like "/segments" or "/agent")
   - "priority": "high", "medium", or "low"
-  
-  Return ONLY a JSON array. No markdown, no explanation. Focus on:
-  1. At-risk customers needing re-engagement
-  2. High-performing segments or channels worth doubling down on
-  3. Opted-out customer rate if concerning
-  4. Campaign performance patterns
-  5. Untapped audiences or cities`,
-        messages: [
-          {
-            role: "user",
-            content: `Here is the current CRM data:\n${context}`,
-          },
-        ],
+
+  Return ONLY a JSON array. No markdown, no explanation.`,
+        messages: [{ role: "user", content: [{ type: "text", text: `Here is the current CRM data:\n${context}` }] }],
+        tools: [],
+        maxTokens: 1024,
       });
 
-      const text =
-        response.content[0].type === "text" ? response.content[0].text : "[]";
-
-      // Extract JSON from response (handle possible markdown wrapping)
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      const jsonMatch = resp.text.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
         insights = JSON.parse(jsonMatch[0]);
       } else {
-        throw new Error("Invalid Claude response structure");
+        throw new Error("Invalid LLM response structure");
       }
     }
 
@@ -291,7 +277,8 @@ router.get("/customer-health", async (req: Request, res: Response) => {
 /**
  * GET /api/insights/suggested-segments — AI-suggested segments based on data patterns
  */
-router.get("/suggested-segments", async (_req: Request, res: Response) => {
+router.get("/suggested-segments", async (req: Request, res: Response) => {
+  const creds = tryReadCreds(req);
   try {
     const existingCount = await prisma.segment.count();
 
@@ -310,8 +297,7 @@ router.get("/suggested-segments", async (_req: Request, res: Response) => {
 
     let suggestions: any[] = [];
 
-    if (isApiKeyDummy()) {
-      console.warn("Using high-fidelity mock suggested segments due to dummy Anthropic API key.");
+    if (!creds) {
       suggestions = [
         {
           name: "VIP Dormant Coffees",
@@ -330,34 +316,25 @@ router.get("/suggested-segments", async (_req: Request, res: Response) => {
           description: "New customers with exactly 1 order who registered in the last 30 days.",
           naturalLanguage: "Customers with exactly 1 order who registered in the last 30 days",
           priority: "low",
-        }
+        },
       ];
     } else {
-      const client = getClient();
-      const response = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1024,
+      const provider = makeProvider(creds);
+      const resp = await provider.generate({
         system: `You are a marketing strategist for "Brewcraft Coffee". Suggest 3 high-value customer segments. Return ONLY a JSON array where each object has:
   - "name": segment name (concise, 3-5 words)
-  - "description": why this segment matters (1 sentence)  
+  - "description": why this segment matters (1 sentence)
   - "naturalLanguage": the plain-English description a marketer would type to create this segment
   - "priority": "high", "medium", or "low"
   No markdown, no explanation. Just the JSON array.`,
-        messages: [
-          {
-            role: "user",
-            content: `Data: ${existingCount} segments exist. Cities: ${JSON.stringify(
-              cityDist.map((c) => ({ city: c.city, count: Number(c.count) }))
-            )}. Order stats: avg ₹${Math.round(
-              orderStats[0]?.avg_amount || 0
-            )}, max ₹${Math.round(orderStats[0]?.max_amount || 0)}.`,
-          },
-        ],
+        messages: [{
+          role: "user",
+          content: [{ type: "text", text: `Data: ${existingCount} segments exist. Cities: ${JSON.stringify(cityDist.map((c) => ({ city: c.city, count: Number(c.count) })))}. Order stats: avg ₹${Math.round(orderStats[0]?.avg_amount || 0)}, max ₹${Math.round(orderStats[0]?.max_amount || 0)}.` }],
+        }],
+        tools: [],
+        maxTokens: 1024,
       });
-
-      const text =
-        response.content[0].type === "text" ? response.content[0].text : "[]";
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      const jsonMatch = resp.text.match(/\[[\s\S]*\]/);
       if (jsonMatch) suggestions = JSON.parse(jsonMatch[0]);
     }
 
@@ -394,7 +371,8 @@ router.get("/suggested-segments", async (_req: Request, res: Response) => {
 /**
  * GET /api/insights/analytics-narrative — AI interpretation of analytics data
  */
-router.get("/analytics-narrative", async (_req: Request, res: Response) => {
+router.get("/analytics-narrative", async (req: Request, res: Response) => {
+  const creds = tryReadCreds(req);
   try {
     // Get channel performance data
     const channelStats = await prisma.$queryRaw<
@@ -427,56 +405,38 @@ router.get("/analytics-narrative", async (_req: Request, res: Response) => {
 
     let narrative = "";
 
-    if (isApiKeyDummy()) {
-      console.warn("Using high-fidelity mock analytics narrative due to dummy Anthropic API key.");
-      
-      // Calculate basic metrics from context to make mock data look realistic
-      let totalSent = 0;
-      let totalDelivered = 0;
-      let whatsappSent = 0;
-      let whatsappDelivered = 0;
-      
+    if (!creds) {
+      let totalSent = 0, totalDelivered = 0, whatsappSent = 0, whatsappDelivered = 0;
       context.forEach(c => {
-        if (c.event === "sent") {
-          totalSent += c.count;
-          if (c.channel === "whatsapp") whatsappSent += c.count;
-        }
-        if (c.event === "delivered") {
-          totalDelivered += c.count;
-          if (c.channel === "whatsapp") whatsappDelivered += c.count;
-        }
+        if (c.event === "sent") { totalSent += c.count; if (c.channel === "whatsapp") whatsappSent += c.count; }
+        if (c.event === "delivered") { totalDelivered += c.count; if (c.channel === "whatsapp") whatsappDelivered += c.count; }
       });
-      
-      const overallDeliveryRate = totalSent > 0 ? Math.round((totalDelivered / totalSent) * 100) : 92;
-      const waDeliveryRate = whatsappSent > 0 ? Math.round((whatsappDelivered / whatsappSent) * 100) : 94;
-
-      narrative = `Overall delivery rate across all channels stands strong at ${overallDeliveryRate}%. WhatsApp continues to be the most active channel with a solid ${waDeliveryRate}% delivery efficiency. Recommending shifting higher friction re-engagement campaigns from SMS to WhatsApp for richer customer engagement tracking.`;
+      if (totalSent > 0 && whatsappSent > 0) {
+        const overallRate = Math.round((totalDelivered / totalSent) * 100);
+        const waRate = Math.round((whatsappDelivered / whatsappSent) * 100);
+        narrative = `Overall delivery rate stands at ${overallRate}%. WhatsApp is the most active channel with ${waRate}% delivery efficiency. Consider shifting re-engagement campaigns from SMS to WhatsApp for richer tracking.`;
+      } else {
+        narrative = "Overall delivery rate across channels is healthy. WhatsApp is the most active channel. Consider shifting re-engagement campaigns from SMS to WhatsApp for richer tracking.";
+      }
+      return res.json({ narrative, generatedAt: new Date().toISOString(), mock: true });
     } else {
-      const client = getClient();
-      const response = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 512,
+      const provider = makeProvider(creds);
+      const resp = await provider.generate({
         system: `You are a marketing analytics advisor for "Brewcraft Coffee". Write a 2-3 sentence narrative summary of the campaign performance data. Be specific with numbers and percentages. Mention channel comparisons if relevant. Note that SMS cannot track opens/clicks (delivery only). No markdown formatting — plain text only.`,
-        messages: [
-          {
-            role: "user",
-            content: `${campaignCount} campaigns run. Channel events: ${JSON.stringify(context)}`,
-          },
-        ],
+        messages: [{ role: "user", content: [{ type: "text", text: `${campaignCount} campaigns run. Channel events: ${JSON.stringify(context)}` }] }],
+        tools: [],
+        maxTokens: 512,
       });
-
-      narrative =
-        response.content[0].type === "text"
-          ? response.content[0].text
-          : "Unable to generate narrative.";
+      narrative = resp.text || "Unable to generate narrative.";
     }
 
     res.json({ narrative, generatedAt: new Date().toISOString() });
   } catch (error) {
     console.error("Error in GET /api/insights/analytics-narrative:", error);
     res.json({
-      narrative: "Overall campaign delivery rates look healthy at 92.4% average across active channels. WhatsApp is driving the highest response, while SMS remains a reliable fallback for high-delivery confirmation. Continue monitoring channel-specific engagement to optimize costs.",
+      narrative: "Overall campaign delivery rates are healthy across active channels. WhatsApp is driving the highest response, while SMS remains a reliable fallback for high-delivery confirmation. Continue monitoring channel-specific engagement to optimize costs.",
       generatedAt: new Date().toISOString(),
+      mock: true
     });
   }
 });
