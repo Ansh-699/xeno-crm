@@ -1,3 +1,4 @@
+use chrono::Utc;
 use axum::{
     extract::Json,
     http::StatusCode,
@@ -64,6 +65,48 @@ struct AppState {
     semaphore: Semaphore,
     seen_keys: DashMap<String, ()>,
     http_client: reqwest::Client,
+    // Host that callback URLs must match (derived from CALLBACK_BASE_URL).
+    allowed_callback_host: String,
+}
+
+// Max messages accepted in a single /send batch — bounds task/memory fan-out.
+const MAX_BATCH: usize = 5000;
+// Soft cap on the idempotency key set — crude eviction to bound memory.
+const MAX_SEEN_KEYS: usize = 1_000_000;
+
+/// SSRF guard: a callback URL is allowed only if it is http(s), is NOT an IP literal in a
+/// private/loopback/link-local range, and its host matches the configured backend host.
+fn is_callback_allowed(url_str: &str, allowed_host: &str) -> bool {
+    let parsed = match reqwest::Url::parse(url_str) {
+        Ok(u) => u,
+        Err(_) => return false,
+    };
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return false;
+    }
+    let host = match parsed.host_str() {
+        Some(h) => h,
+        None => return false,
+    };
+    // Reject IP-literal hosts that point at internal ranges (e.g. 169.254.169.254 metadata,
+    // 127/8, 10/8, 172.16/12, 192.168/16, ::1). Real callbacks use a hostname ("backend"
+    // / "localhost"), which is matched by the allowlist check below instead.
+    let host_no_brackets = host.trim_start_matches('[').trim_end_matches(']');
+    if let Ok(ip) = host_no_brackets.parse::<std::net::IpAddr>() {
+        match ip {
+            std::net::IpAddr::V4(v4) => {
+                if v4.is_loopback() || v4.is_private() || v4.is_link_local() {
+                    return false;
+                }
+            }
+            std::net::IpAddr::V6(v6) => {
+                if v6.is_loopback() {
+                    return false;
+                }
+            }
+        }
+    }
+    host.eq_ignore_ascii_case(allowed_host)
 }
 
 fn get_channel_config(channel: &str) -> Option<ChannelConfig> {
@@ -202,22 +245,7 @@ async fn simulate_message(state: Arc<AppState>, msg: Message) {
 }
 
 fn chrono_now() -> String {
-    // Simple ISO 8601 timestamp using system time
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap();
-    let secs = now.as_secs();
-    // Format as ISO string (good enough without chrono dependency)
-    format!(
-        "{}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
-        1970 + secs / 31557600,
-        (secs % 31557600) / 2629800 + 1,
-        (secs % 2629800) / 86400 + 1,
-        (secs % 86400) / 3600,
-        (secs % 3600) / 60,
-        secs % 60,
-        now.subsec_millis()
-    )
+    Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
 async fn health() -> impl IntoResponse {
@@ -234,12 +262,43 @@ async fn send(
     let mut accepted = 0usize;
     let mut duplicates = 0usize;
 
+    if payload.len() > MAX_BATCH {
+        eprintln!(
+            "Rejected /send batch of {} (max {})",
+            payload.len(),
+            MAX_BATCH
+        );
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(SendResponse {
+                status: "batch_too_large".to_string(),
+                accepted: 0,
+                duplicates: 0,
+            }),
+        );
+    }
+
     for msg in payload {
-        if state.seen_keys.contains_key(&msg.idempotency_key) {
+        // SSRF guard: only dispatch callbacks to the configured backend host.
+        if !is_callback_allowed(&msg.callback_url, &state.allowed_callback_host) {
+            eprintln!(
+                "Skipped message with disallowed callback_url: {}",
+                msg.callback_url
+            );
+            continue;
+        }
+
+        // Crude memory bound on the idempotency key set.
+        if state.seen_keys.len() >= MAX_SEEN_KEYS {
+            state.seen_keys.clear();
+        }
+
+        // Atomic check-and-insert: insert returns Some(old) if the key already existed,
+        // closing the TOCTOU window between a separate contains_key() and insert().
+        if state.seen_keys.insert(msg.idempotency_key.clone(), ()).is_some() {
             duplicates += 1;
             continue;
         }
-        state.seen_keys.insert(msg.idempotency_key.clone(), ());
         accepted += 1;
         let state_clone = state.0.clone();
         tokio::spawn(simulate_message(state_clone, msg));
@@ -301,6 +360,15 @@ async fn main() {
     let port = std::env::var("PORT").unwrap_or_else(|_| "4000".to_string());
     let addr = format!("0.0.0.0:{}", port);
 
+    // Callbacks may only be sent to this host (defends against SSRF via callback_url).
+    let callback_base =
+        std::env::var("CALLBACK_BASE_URL").unwrap_or_else(|_| "http://localhost:3001".to_string());
+    let allowed_callback_host = reqwest::Url::parse(&callback_base)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_string()))
+        .unwrap_or_else(|| "localhost".to_string());
+    println!("Allowed callback host: {}", allowed_callback_host);
+
     let state = Arc::new(AppState {
         semaphore: Semaphore::new(500),
         seen_keys: DashMap::new(),
@@ -308,6 +376,7 @@ async fn main() {
             .timeout(Duration::from_secs(10))
             .build()
             .unwrap(),
+        allowed_callback_host,
     });
 
     let app = Router::new()
@@ -316,7 +385,16 @@ async fn main() {
         .route("/config", get(get_config))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Failed to bind to {}: {}", addr, e);
+            std::process::exit(1);
+        }
+    };
     println!("Channel service running on {}", addr);
-    axum::serve(listener, app).await.unwrap();
+    if let Err(e) = axum::serve(listener, app).await {
+        eprintln!("Server error: {}", e);
+        std::process::exit(1);
+    }
 }

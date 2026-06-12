@@ -7,7 +7,7 @@ import { createHash } from "crypto";
 // Tools that require user confirmation before execution
 export const TOOLS_REQUIRING_CONFIRMATION = new Set(["launch_campaign"]);
 
-// Tool definitions — all 9
+// Tool definitions — all 11
 export const toolDefinitions: Array<{ name: string; description: string; input_schema: Record<string, any> }> = [
   {
     name: "describe_schema",
@@ -295,7 +295,7 @@ export const toolDefinitions: Array<{ name: string; description: string; input_s
 ];
 
 // Tool executors
-export async function executeTool(name: string, input: any): Promise<string> {
+export async function executeTool(name: string, input: any, creds?: LLMCredentials): Promise<string> {
   switch (name) {
     case "describe_schema":
       return executeDescribeSchema();
@@ -314,7 +314,7 @@ export async function executeTool(name: string, input: any): Promise<string> {
     case "get_campaign_stats":
       return executeGetCampaignStats(input);
     case "analyze_performance":
-      return executeAnalyzePerformance(input);
+      return executeAnalyzePerformance(input, creds);
     case "compare_campaigns":
       return executeCompareCampaigns(input);
     case "get_segment_analytics":
@@ -750,13 +750,10 @@ import { generateCampaignBrief } from "../brief-generator";
 import { getAnalyticsData } from "../../analytics";
 import type { LLMCredentials } from "../llm";
 
-let _toolCreds: LLMCredentials | undefined;
-export function setToolCreds(c: LLMCredentials | undefined) { _toolCreds = c; }
-
 async function executeAnalyzePerformance(input: {
   campaignId: string;
-}): Promise<string> {
-  const brief = await generateCampaignBrief(input.campaignId, _toolCreds);
+}, creds?: LLMCredentials): Promise<string> {
+  const brief = await generateCampaignBrief(input.campaignId, creds);
   return JSON.stringify({
     success: true,
     campaignId: input.campaignId,

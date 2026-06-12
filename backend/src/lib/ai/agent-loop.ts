@@ -1,5 +1,5 @@
 import prisma from "../prisma";
-import { toolDefinitions, executeTool, TOOLS_REQUIRING_CONFIRMATION, setToolCreds } from "./tools/index";
+import { toolDefinitions, executeTool, TOOLS_REQUIRING_CONFIRMATION } from "./tools/index";
 import { makeProvider, LLMCredentials, LLMMessage, LLMContentBlock, LLMToolDef } from "./llm";
 
 const SYSTEM_PROMPT = `You are an AI campaign manager for a CRM system called Xeno. You help users create audience segments, draft marketing messages, recommend channels, and launch campaigns.
@@ -109,7 +109,7 @@ export async function* agentLoop(
     const partialResults: LLMContentBlock[] = run.pendingTool.partialResults ?? [];
     if (input.approved) {
       try {
-        const result = await executeTool(run.pendingTool.name, run.pendingTool.input);
+        const result = await executeTool(run.pendingTool.name, run.pendingTool.input, creds);
         const content = typeof result === "string" ? result : JSON.stringify(result);
         run.messages.push({
           role: "user",
@@ -144,7 +144,6 @@ export async function* agentLoop(
     return;
   }
 
-  setToolCreds(creds);
   const provider = makeProvider(creds);
   const tools: LLMToolDef[] = toolDefinitions.map((t) => ({
     name: t.name,
@@ -202,7 +201,7 @@ export async function* agentLoop(
         }
 
         try {
-          const result = await executeTool(tool.name, tool.input);
+          const result = await executeTool(tool.name, tool.input, creds);
           const resultStr = typeof result === "string" ? result : JSON.stringify(result);
           toolResults.push(makeResultBlock(tool.id, resultStr));
           yield { type: "tool_result", toolResult: { name: tool.name, output: result } };
@@ -229,7 +228,7 @@ export async function* agentLoop(
         run.messages.push({ role: "user", content: toolResults });
       }
 
-      if (resp.stopReason === "end_turn" || resp.stopReason === "stop") {
+      if (resp.stopReason === "end_turn" || resp.stopReason === "stop" || resp.stopReason === "STOP") {
         run.status = "completed";
         yield { type: "end" };
         break;

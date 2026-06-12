@@ -155,7 +155,7 @@ export default function AnalyticsPage() {
           <button
             onClick={loadNarrative}
             disabled={loadingNarrative}
-            className="p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-350 transition-colors"
+            className="p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-400 transition-colors"
           >
             {loadingNarrative ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -168,7 +168,7 @@ export default function AnalyticsPage() {
         {loadingNarrative ? (
           <div className="text-xs text-zinc-500 py-1">Synthesizing delivery rates and click patterns...</div>
         ) : (
-          <p className="text-xs text-zinc-350 leading-relaxed font-medium">
+          <p className="text-xs text-zinc-400 leading-relaxed font-medium">
             {narrative}
           </p>
         )}
@@ -310,7 +310,7 @@ export default function AnalyticsPage() {
                     </td>
                     <td className="text-right py-3 px-4 tabular-nums">
                       {isSms ? (
-                        <span className="text-zinc-650 text-xs">N/A</span>
+                        <span className="text-zinc-600 text-xs">N/A</span>
                       ) : (
                         <span className="text-amber-400">
                           {(opened + read).toLocaleString()}
@@ -319,7 +319,7 @@ export default function AnalyticsPage() {
                     </td>
                     <td className="text-right py-3 px-4 tabular-nums">
                       {isSms ? (
-                        <span className="text-zinc-655 text-xs">N/A</span>
+                        <span className="text-zinc-600 text-xs">N/A</span>
                       ) : (
                         <span className="text-cyan-400">
                           {clicked.toLocaleString()}
@@ -349,21 +349,25 @@ export default function AnalyticsPage() {
         <div className="flex items-center gap-2 mb-5">
           <Megaphone className="h-5 w-5 text-amber-400" />
           <h2 className="text-lg font-semibold text-white">Campaign History</h2>
-          <span className="text-xs text-zinc-550 ml-2">
+          <span className="text-xs text-zinc-500 ml-2">
             {campaigns.length} campaigns
           </span>
         </div>
 
         {campaigns.length === 0 ? (
-          <div className="py-8 text-center text-zinc-550">
+          <div className="py-8 text-center text-zinc-500">
             <p>No campaigns yet</p>
           </div>
         ) : (
           <div className="space-y-3">
             {campaigns.map((c) => {
+              const channelKeys = Object.keys(c.channels);
+              // SMS is delivery-only (no opens/clicks). Detect it explicitly from the
+              // campaign channel or a sole "sms" channel key — never from a count value,
+              // which is 0 for a queued SMS campaign and would misclassify it.
               const isSms =
                 c.channel === "sms" ||
-                (Object.keys(c.channels).length === 1 && c.channels.sms);
+                (channelKeys.length === 1 && channelKeys[0] === "sms");
 
               return (
                 <div key={c.id}>
@@ -592,7 +596,7 @@ function OverviewCard({
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-zinc-550">{label}</span>
+        <span className="text-xs text-zinc-500">{label}</span>
         <div className={`p-1.5 rounded-lg ${bgColor}`}>
           <Icon className={`h-3.5 w-3.5 ${color}`} />
         </div>
@@ -661,7 +665,7 @@ function StatusDot({ status }: { status: string }) {
       ? "bg-blue-400 animate-pulse"
       : status === "failed"
       ? "bg-red-400"
-      : "bg-zinc-550";
+      : "bg-zinc-500";
   return <div className={`w-2 h-2 rounded-full ${color}`} />;
 }
 

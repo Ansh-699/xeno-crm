@@ -59,7 +59,13 @@ async function poll(): Promise<void> {
   isPolling = true;
 
   try {
-    // SELECT FOR UPDATE SKIP LOCKED
+    // Drain loop: keep claiming and sending batches until a claim returns fewer than
+    // BATCH_SIZE rows, so a large queue empties promptly instead of one batch per 5s
+    // fallback tick. The isPolling guard (above) wraps the whole drain, not each batch.
+    while (true) {
+    // Atomically claim a batch: UPDATE ... WHERE id IN (SELECT ... FOR UPDATE SKIP LOCKED)
+    // This is a single statement — no gap between the lock and the status update, so a
+    // second concurrent poller instance cannot claim the same rows.
     const batch = await prisma.$queryRaw<
       Array<{
         id: bigint;
@@ -71,24 +77,22 @@ async function poll(): Promise<void> {
         maxAttempts: number;
       }>
     >`
-      SELECT id, "eventType", "aggregateId", "campaignId", payload, attempts, "maxAttempts"
-      FROM "Outbox"
-      WHERE status = 'PENDING' AND "nextRetryAt" <= NOW()
-      ORDER BY "nextRetryAt"
-      LIMIT ${BATCH_SIZE}
-      FOR UPDATE SKIP LOCKED
+      UPDATE "Outbox"
+      SET status = 'PROCESSING', "processingAt" = NOW()
+      WHERE id IN (
+        SELECT id FROM "Outbox"
+        WHERE status = 'PENDING'
+          AND ("nextRetryAt" IS NULL OR "nextRetryAt" <= NOW())
+        ORDER BY id
+        LIMIT ${BATCH_SIZE}
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING id, "eventType", "aggregateId", "campaignId", payload, attempts, "maxAttempts"
     `;
 
     if (batch.length === 0) {
-      return;
+      break;
     }
-
-    const ids = batch.map((row) => row.id);
-
-    // Mark as PROCESSING
-    await prisma.$executeRaw`
-      UPDATE "Outbox" SET status = 'PROCESSING', "processingAt" = NOW() WHERE id = ANY(${ids}::bigint[])
-    `;
 
     // Build messages array for channel service
     const messages = batch.map((row) => {
@@ -112,11 +116,12 @@ async function poll(): Promise<void> {
       });
 
       if (resp.ok) {
-        // Mark as SENT
+        // Mark as SENT — derive ids from the already-claimed batch
+        const batchIds = batch.map((row) => row.id);
         await prisma.$executeRaw`
           UPDATE "Outbox"
           SET status = 'SENT', "processedAt" = NOW()
-          WHERE id = ANY(${ids}::bigint[])
+          WHERE id = ANY(${batchIds}::bigint[])
         `;
 
         // If campaign still queued, move to sending
@@ -180,6 +185,10 @@ async function poll(): Promise<void> {
           `;
         }
       }
+    }
+
+    // A short batch means the queue is drained; otherwise loop and claim more now.
+    if (batch.length < BATCH_SIZE) break;
     }
   } catch (err) {
     console.error("[poller] Poll error:", err);
@@ -305,15 +314,15 @@ async function checkCompletion(): Promise<void> {
         `[completion] Campaign ${campaign.id} → ${newStatus}`
       );
 
-      // Generate AI performance brief with a delay (30s)
-      // to allow engagement callbacks (delivered, opened, clicked) to arrive.
+      // Generate a static performance brief (worker has no LLM key — fallback template only).
+      // For an AI-powered brief, use the "analyze_performance" tool in the agent UI.
       setTimeout(() => {
         generateCampaignBrief(campaign.id)
-          .then((brief) => {
-            console.log(`[completion] Auto-generated AI performance brief for campaign ${campaign.id}`);
+          .then(() => {
+            console.log(`[completion] Fallback brief generated for campaign ${campaign.id} (no LLM key in worker)`);
           })
           .catch((err) => {
-            console.error(`[completion] Failed to auto-generate AI brief for campaign ${campaign.id}:`, err.message);
+            console.error(`[completion] Failed to generate brief for campaign ${campaign.id}:`, err.message);
           });
       }, 30000);
 

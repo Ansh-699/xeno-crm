@@ -103,30 +103,76 @@ router.get("/", async (req: Request, res: Response) => {
     let insights: any[] = [];
 
     if (!creds) {
-      insights = [
-        {
+      // No LLM key: emit only insights that are grounded in the real data above.
+      const grounded: any[] = [];
+
+      // Churn risk — only when there actually are at-risk customers.
+      if (Number(atRiskCustomers) > 0) {
+        grounded.push({
           icon: "warning",
           title: "High Risk Churn Segment Identified",
-          body: `Around ${atRiskCustomers} loyal customers haven't placed an order in over 30 days. Recommend sending a discount campaign.`,
+          body: `${atRiskCustomers} customers who previously ordered haven't placed an order in over 30 days. Consider a win-back discount campaign.`,
           action: { label: "Create Segment", href: "/segments" },
           priority: "high",
-        },
-        {
+        });
+      }
+
+      // Channel comparison — only when WhatsApp genuinely out-delivers SMS.
+      const byChannel: Record<string, { sent: number; delivered: number }> = {};
+      for (const cs of campaignStats) {
+        const ch = (cs.channel || "unknown").toLowerCase();
+        if (!byChannel[ch]) byChannel[ch] = { sent: 0, delivered: 0 };
+        byChannel[ch].sent += cs.sent;
+        byChannel[ch].delivered += cs.delivered;
+      }
+      const waRate = byChannel.whatsapp?.sent
+        ? byChannel.whatsapp.delivered / byChannel.whatsapp.sent
+        : null;
+      const smsRate = byChannel.sms?.sent
+        ? byChannel.sms.delivered / byChannel.sms.sent
+        : null;
+      if (waRate !== null && smsRate !== null && waRate > smsRate) {
+        grounded.push({
           icon: "trend_up",
           title: "WhatsApp Channel is Outperforming",
-          body: "WhatsApp message delivery is strong compared to SMS. Shift budget to WhatsApp for upcoming campaigns.",
+          body: `WhatsApp delivery (${Math.round(waRate * 100)}%) is outpacing SMS (${Math.round(
+            smsRate * 100
+          )}%). Consider shifting budget to WhatsApp for upcoming campaigns.`,
           action: { label: "AI Agent", href: "/agent" },
           priority: "medium",
-        },
-        {
+        });
+      }
+
+      // Top market — only when the #1 city is actually Delhi; use the real count.
+      const topCity = topCities[0];
+      if (
+        topCity &&
+        typeof topCity.city === "string" &&
+        topCity.city.toLowerCase() === "delhi"
+      ) {
+        grounded.push({
           icon: "users",
           title: "Rapid Audience Growth in Delhi",
-          body: `Delhi has become your top market with over ${topCities.find(c => c.city.toLowerCase() === "delhi")?.count || "500"} customers. Consider launching a regional special offer.`,
+          body: `Delhi is your top market with ${Number(
+            topCity.count
+          )} customers. Consider launching a regional special offer.`,
           action: { label: "View Customers", href: "/customers" },
           priority: "low",
-        },
-      ];
-      return res.json({ insights, generatedAt: new Date().toISOString(), mock: true });
+        });
+      }
+
+      // Always return something actionable, without inventing specifics.
+      if (grounded.length === 0) {
+        grounded.push({
+          icon: "sparkle",
+          title: "Your CRM is Ready",
+          body: "Import customers and launch a campaign to start generating data-driven insights.",
+          action: { label: "Open AI Agent", href: "/agent" },
+          priority: "medium",
+        });
+      }
+
+      return res.json({ insights: grounded, generatedAt: new Date().toISOString() });
     } else {
       const provider = makeProvider(creds);
       const resp = await provider.generate({
@@ -166,75 +212,55 @@ router.get("/", async (req: Request, res: Response) => {
         },
       ],
       generatedAt: new Date().toISOString(),
-      fallback: true,
     });
   }
 });
 
 /**
- * GET /api/insights/customer-health — Compute customer health scores
- * Returns health categories for all customers (or a page of them)
+ * GET /api/insights/customer-summary — Workspace-wide customer aggregates
+ * Computes total customers, total LTV, opted-out count, and health distribution.
  */
-router.get("/customer-health", async (req: Request, res: Response) => {
+router.get("/customer-summary", async (_req: Request, res: Response) => {
   try {
-    const limit = parseInt(req.query.limit as string) || 50;
-    const search = (req.query.search as string) || "";
-
-    // Build search filter
-    const searchFilter = search
-      ? {
-          OR: [
-            { name: { contains: search, mode: "insensitive" as const } },
-            { email: { contains: search, mode: "insensitive" as const } },
-            { phone: { contains: search, mode: "insensitive" as const } },
-          ],
-        }
-      : {};
-
-    // Get customers with their order stats
-    const customers = await prisma.customer.findMany({
-      where: searchFilter,
-      take: limit,
-      orderBy: { createdAt: "desc" },
+    const allCustomers = await prisma.customer.findMany({
       select: {
         id: true,
-        name: true,
-        email: true,
-        phone: true,
-        city: true,
         optedOut: true,
         orders: {
           select: { orderedAt: true, amount: true },
-          orderBy: { orderedAt: "desc" },
         },
       },
     });
 
-    const total = await prisma.customer.count({ where: searchFilter });
-
     const now = Date.now();
-    const enriched = customers.map((c) => {
+    let totalLTV = 0;
+    let optedOutCount = 0;
+    const counts = { loyal: 0, regular: 0, at_risk: 0, churning: 0, new: 0 };
+
+    for (const c of allCustomers) {
+      if (c.optedOut) optedOutCount++;
+
       const orderCount = c.orders.length;
-      const lastOrderDate = c.orders[0]?.orderedAt;
+      totalLTV += c.orders.reduce((sum, o) => sum + o.amount, 0);
+
+      const sortedOrders = [...c.orders].sort(
+        (a, b) => new Date(b.orderedAt).getTime() - new Date(a.orderedAt).getTime()
+      );
+      const lastOrderDate = sortedOrders[0]?.orderedAt;
       const daysSinceLastOrder = lastOrderDate
         ? Math.floor((now - new Date(lastOrderDate).getTime()) / (1000 * 60 * 60 * 24))
         : null;
-      const totalSpent = c.orders.reduce((sum, o) => sum + o.amount, 0);
 
-      // Compute average order gap (frequency)
       let avgOrderGapDays: number | null = null;
       if (orderCount >= 2) {
         const dates = c.orders.map((o) => new Date(o.orderedAt).getTime()).sort();
-        const gaps = [];
+        const gaps: number[] = [];
         for (let i = 1; i < dates.length; i++) {
           gaps.push((dates[i] - dates[i - 1]) / (1000 * 60 * 60 * 24));
         }
-        avgOrderGapDays = Math.round(
-          gaps.reduce((a, b) => a + b, 0) / gaps.length
-        );
+        avgOrderGapDays = Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length);
       }
 
-      // Determine health status
       let health: "loyal" | "regular" | "at_risk" | "churning" | "new";
       if (orderCount === 0) {
         health = "new";
@@ -252,22 +278,157 @@ router.get("/customer-health", async (req: Request, res: Response) => {
         health = "regular";
       }
 
-      return {
-        id: c.id,
-        name: c.name,
-        email: c.email,
-        phone: c.phone,
-        city: c.city,
-        optedOut: c.optedOut,
-        health,
-        orderCount,
-        totalSpent: Math.round(totalSpent),
-        daysSinceLastOrder,
-        avgOrderGapDays,
-      };
-    });
+      counts[health]++;
+    }
 
-    res.json({ customers: enriched, total });
+    res.json({
+      total: allCustomers.length,
+      totalLTV: Math.round(totalLTV),
+      optedOutCount,
+      counts,
+    });
+  } catch (error) {
+    console.error("Error in GET /api/insights/customer-summary:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * GET /api/insights/customer-health — Compute customer health scores
+ * Returns health categories for all customers (or a page of them).
+ * Supports an optional `health` filter; when set, the health is computed over the
+ * full candidate set, filtered, and THEN paginated so `total` reflects the filtered
+ * count (not the unfiltered table size).
+ */
+type EnrichedCustomer = {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  city: string | null;
+  optedOut: boolean;
+  health: "loyal" | "regular" | "at_risk" | "churning" | "new";
+  orderCount: number;
+  totalSpent: number;
+  daysSinceLastOrder: number | null;
+  avgOrderGapDays: number | null;
+};
+
+const CUSTOMER_HEALTH_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  phone: true,
+  city: true,
+  optedOut: true,
+  orders: {
+    select: { orderedAt: true, amount: true },
+    orderBy: { orderedAt: "desc" as const },
+  },
+} as const;
+
+function enrichCustomerHealth(c: any, now: number): EnrichedCustomer {
+  const orderCount = c.orders.length;
+  const lastOrderDate = c.orders[0]?.orderedAt;
+  const daysSinceLastOrder = lastOrderDate
+    ? Math.floor((now - new Date(lastOrderDate).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+  const totalSpent = c.orders.reduce((sum: number, o: any) => sum + o.amount, 0);
+
+  // Compute average order gap (frequency)
+  let avgOrderGapDays: number | null = null;
+  if (orderCount >= 2) {
+    const dates = c.orders.map((o: any) => new Date(o.orderedAt).getTime()).sort();
+    const gaps: number[] = [];
+    for (let i = 1; i < dates.length; i++) {
+      gaps.push((dates[i] - dates[i - 1]) / (1000 * 60 * 60 * 24));
+    }
+    avgOrderGapDays = Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length);
+  }
+
+  // Determine health status
+  let health: EnrichedCustomer["health"];
+  if (orderCount === 0) {
+    health = "new";
+  } else if (daysSinceLastOrder !== null && daysSinceLastOrder > 60) {
+    health = "churning";
+  } else if (
+    daysSinceLastOrder !== null &&
+    avgOrderGapDays !== null &&
+    daysSinceLastOrder > avgOrderGapDays * 2
+  ) {
+    health = "at_risk";
+  } else if (orderCount >= 5) {
+    health = "loyal";
+  } else {
+    health = "regular";
+  }
+
+  return {
+    id: c.id,
+    name: c.name,
+    email: c.email,
+    phone: c.phone,
+    city: c.city,
+    optedOut: c.optedOut,
+    health,
+    orderCount,
+    totalSpent: Math.round(totalSpent),
+    daysSinceLastOrder,
+    avgOrderGapDays,
+  };
+}
+
+const VALID_HEALTH = new Set(["loyal", "regular", "at_risk", "churning", "new"]);
+
+router.get("/customer-health", async (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const offset = parseInt(req.query.offset as string) || 0;
+    const search = (req.query.search as string) || "";
+    const healthParam = (req.query.health as string) || "all";
+
+    // Build search filter
+    const searchFilter = search
+      ? {
+          OR: [
+            { name: { contains: search, mode: "insensitive" as const } },
+            { email: { contains: search, mode: "insensitive" as const } },
+            { phone: { contains: search, mode: "insensitive" as const } },
+          ],
+        }
+      : {};
+
+    const now = Date.now();
+
+    // Fast path: no health filter → paginate in the DB.
+    if (healthParam === "all" || !VALID_HEALTH.has(healthParam)) {
+      const customers = await prisma.customer.findMany({
+        where: searchFilter,
+        take: limit,
+        skip: offset,
+        orderBy: { createdAt: "desc" },
+        select: CUSTOMER_HEALTH_SELECT,
+      });
+      const total = await prisma.customer.count({ where: searchFilter });
+      const enriched = customers.map((c) => enrichCustomerHealth(c, now));
+      return res.json({ customers: enriched, total });
+    }
+
+    // Health-filtered path: health is a derived value, so compute it over the full
+    // candidate set, filter, then paginate. `total` is the filtered count.
+    const allCustomers = await prisma.customer.findMany({
+      where: searchFilter,
+      orderBy: { createdAt: "desc" },
+      select: CUSTOMER_HEALTH_SELECT,
+    });
+    const filtered = allCustomers
+      .map((c) => enrichCustomerHealth(c, now))
+      .filter((c) => c.health === healthParam);
+    const total = filtered.length;
+    const page = filtered.slice(offset, offset + limit);
+
+    res.json({ customers: page, total });
   } catch (error) {
     console.error("Error in GET /api/insights/customer-health:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -341,30 +502,8 @@ router.get("/suggested-segments", async (req: Request, res: Response) => {
     res.json({ suggestions, existingCount });
   } catch (error) {
     console.error("Error in GET /api/insights/suggested-segments:", error);
-    // Return high-fidelity fallbacks on error to guarantee operational UI
-    res.json({
-      suggestions: [
-        {
-          name: "VIP Dormant Coffees",
-          description: "VIP customers who spent over ₹5,000 but haven't placed an order in over 45 days.",
-          naturalLanguage: "Customers who spent over 5000 and last order was more than 45 days ago",
-          priority: "high",
-        },
-        {
-          name: "Delhi Loyalists",
-          description: "Highly engaged customers located in Delhi with at least 5 orders.",
-          naturalLanguage: "Customers in Delhi with more than 4 orders",
-          priority: "medium",
-        },
-        {
-          name: "Single-Purchase Retention",
-          description: "New customers with exactly 1 order who registered in the last 30 days.",
-          naturalLanguage: "Customers with exactly 1 order who registered in the last 30 days",
-          priority: "low",
-        }
-      ],
-      existingCount: 0
-    });
+    // Don't fabricate suggestions on error — return an empty list so the UI can degrade.
+    res.json({ suggestions: [], existingCount: 0 });
   }
 });
 
@@ -418,7 +557,7 @@ router.get("/analytics-narrative", async (req: Request, res: Response) => {
       } else {
         narrative = "Overall delivery rate across channels is healthy. WhatsApp is the most active channel. Consider shifting re-engagement campaigns from SMS to WhatsApp for richer tracking.";
       }
-      return res.json({ narrative, generatedAt: new Date().toISOString(), mock: true });
+      return res.json({ narrative, generatedAt: new Date().toISOString() });
     } else {
       const provider = makeProvider(creds);
       const resp = await provider.generate({
@@ -433,10 +572,11 @@ router.get("/analytics-narrative", async (req: Request, res: Response) => {
     res.json({ narrative, generatedAt: new Date().toISOString() });
   } catch (error) {
     console.error("Error in GET /api/insights/analytics-narrative:", error);
+    // Don't fabricate channel specifics on error — return a neutral, data-free message.
     res.json({
-      narrative: "Overall campaign delivery rates are healthy across active channels. WhatsApp is driving the highest response, while SMS remains a reliable fallback for high-delivery confirmation. Continue monitoring channel-specific engagement to optimize costs.",
+      narrative:
+        "Analytics are temporarily unavailable. Please refresh in a moment to see channel performance.",
       generatedAt: new Date().toISOString(),
-      mock: true
     });
   }
 });

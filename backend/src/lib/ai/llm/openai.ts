@@ -40,19 +40,27 @@ export function openaiProvider(apiKey: string, model = DEFAULT_MODEL): LLMProvid
         model,
         max_tokens: maxTokens,
         messages: oa,
-        tools: tools.map((t) => ({
-          type: "function" as const,
-          function: { name: t.name, description: t.description, parameters: t.inputSchema },
-        })),
+        ...(tools.length > 0 && {
+          tools: tools.map((t) => ({
+            type: "function" as const,
+            function: { name: t.name, description: t.description, parameters: t.inputSchema },
+          })),
+        }),
       });
 
-      const msg = resp.choices[0].message;
+      const choice = resp.choices?.[0];
+      if (!choice) {
+        // Empty choices (e.g. content filter / API edge) — return an empty turn rather
+        // than throwing a TypeError on choices[0].
+        return { text: "", toolUses: [], stopReason: "stop" };
+      }
+      const msg = choice.message;
       const toolUses = (msg.tool_calls ?? []).map((tc: any) => ({
         id: tc.id,
         name: tc.function.name,
         input: JSON.parse(tc.function.arguments || "{}"),
       }));
-      return { text: msg.content ?? "", toolUses, stopReason: resp.choices[0].finish_reason ?? "stop" };
+      return { text: msg.content ?? "", toolUses, stopReason: choice.finish_reason ?? "stop" };
     },
   };
 }

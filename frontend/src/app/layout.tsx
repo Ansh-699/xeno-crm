@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import { Sidebar } from "@/components/sidebar";
 import "./globals.css";
+
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
   title: "Xeno CRM",
@@ -14,7 +17,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="antialiased">
+      <body className={`${inter.variable} font-sans antialiased`}>
         <Sidebar />
         <main className="pl-56 min-h-screen">
           <div className="p-8">{children}</div>

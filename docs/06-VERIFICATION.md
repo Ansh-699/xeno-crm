@@ -1,6 +1,6 @@
 # Verification
 
-Every item below is a testable assertion. Each must pass before the phase is considered complete.
+A reviewer-facing acceptance checklist. Every item is a testable assertion describing the system's intended behavior; tick each box as you verify it against a running instance. Items are grouped by area (the same areas the architecture docs describe).
 
 ## Phase 1: Foundation
 
@@ -85,7 +85,7 @@ Every item below is a testable assertion. Each must pass before the phase is con
 - [ ] Launch returns exclusion breakdown (launched count, optedOut count, unreachable count)
 
 ### Thin AI Slice
-- [ ] NL input → create_segment produces a valid segment with correct customerCount
+- [ ] NL input → create_segment produces a valid segment whose size matches a live count of its filter clause
 - [ ] draft_messages produces merge-field templates per channel
 - [ ] launch_campaign triggers the full outbox → channel → callback → SSE flow
 - [ ] End-to-end: input "target customers who haven't purchased in 60 days" → segment created → messages drafted → campaign launched → stats update in real-time

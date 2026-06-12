@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { apiFetch, apiStream, aiApiFetch, hasAICredentials } from "@/lib/api";
-import { Target, Users, Calendar, Sparkles, Loader2, Plus, ArrowRight, Megaphone, AlertTriangle } from "lucide-react";
+import { Target, Users, Calendar, Sparkles, Loader2, Plus, Megaphone, AlertTriangle, IndianRupee, Heart, ShieldAlert, UserCheck } from "lucide-react";
 import Link from "next/link";
 
 interface Segment {
@@ -14,6 +13,9 @@ interface Segment {
   customerCount: number;
   aiGenerated: boolean;
   createdAt: string;
+  segmentRevenue?: number;
+  healthBreakdown?: { loyal: number; regular: number; at_risk: number; churning: number; new: number };
+  reachable?: { emailable: number; textable: number; optedOut: number };
 }
 
 interface SuggestedSegment {
@@ -21,6 +23,98 @@ interface SuggestedSegment {
   description: string;
   naturalLanguage: string;
   priority: "high" | "medium" | "low";
+}
+
+/** Recursive renderer for the filter DSL tree. Handles nested AND/OR groups. */
+function FilterConditions({ node }: { node: any }) {
+  if (!node) return <span className="text-xs text-zinc-600">No conditions</span>;
+
+  // Leaf condition: has a field property
+  if (node.field) {
+    const val = Array.isArray(node.value)
+      ? node.value.join(", ")
+      : String(node.value ?? "");
+    return (
+      <span className="text-xs px-2 py-1 rounded bg-zinc-800 text-zinc-300">
+        {node.field} {node.op} {val}
+      </span>
+    );
+  }
+
+  // Group node: has operator + conditions array
+  if (node.operator && Array.isArray(node.conditions)) {
+    return (
+      <>
+        <span className="text-xs px-2 py-1 rounded bg-zinc-900 text-zinc-500 border border-zinc-700">
+          {node.operator}
+        </span>
+        {node.conditions.map((c: any, i: number) => (
+          <FilterConditions key={i} node={c} />
+        ))}
+      </>
+    );
+  }
+
+  return null;
+}
+
+/** Small inline health badge for preview cards */
+function HealthPill({ health }: { health: string }) {
+  switch (health) {
+    case "loyal":
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/30">
+          <Heart className="h-2.5 w-2.5 fill-emerald-400" />
+          Loyal
+        </span>
+      );
+    case "at_risk":
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-950/40 text-amber-400 border border-amber-800/30">
+          <ShieldAlert className="h-2.5 w-2.5" />
+          At Risk
+        </span>
+      );
+    case "churning":
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-red-950/40 text-red-400 border border-red-800/30">
+          <ShieldAlert className="h-2.5 w-2.5" />
+          Churning
+        </span>
+      );
+    case "new":
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-blue-950/40 text-blue-400 border border-blue-800/30">
+          <Sparkles className="h-2.5 w-2.5" />
+          New
+        </span>
+      );
+    default:
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-zinc-800/50 text-zinc-300 border border-zinc-700/30">
+          <UserCheck className="h-2.5 w-2.5" />
+          Regular
+        </span>
+      );
+  }
+}
+
+/** Generate a plain-English one-liner from the filter DSL */
+function filterSummary(node: any): string {
+  if (!node) return "";
+  if (node.field) {
+    const opMap: Record<string, string> = {
+      eq: "=", gt: ">", gte: "≥", lt: "<", lte: "≤", contains: "contains",
+    };
+    const opStr = opMap[node.op] || node.op;
+    const val = Array.isArray(node.value) ? node.value.join(", ") : String(node.value ?? "");
+    return `${node.field} ${opStr} ${val}`;
+  }
+  if (node.operator && Array.isArray(node.conditions)) {
+    const sep = node.operator === "OR" ? " OR " : " AND ";
+    return node.conditions.map((c: any) => filterSummary(c)).filter(Boolean).join(sep);
+  }
+  return "";
 }
 
 export default function SegmentsPage() {
@@ -253,9 +347,9 @@ export default function SegmentsPage() {
             value={nlInput}
             onChange={(e) => setNlInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleNlCreate()}
-            placeholder='e.g. "Customers in Delhi who haven ordered in the last 2 months"'
+            placeholder='e.g. "Customers in Delhi who have not ordered in the last 2 months"'
             disabled={creating}
-            className="flex-1 px-4 py-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-sm text-zinc-200 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-700 disabled:opacity-50"
+            className="flex-1 px-4 py-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-700 disabled:opacity-50"
           />
           <button
             onClick={() => handleNlCreate()}
@@ -313,78 +407,120 @@ export default function SegmentsPage() {
         ) : (
           <div className="space-y-4">
             {segments.map((seg) => (
-              <div key={seg.id} className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold">{seg.name}</h3>
-                      {seg.aiGenerated && (
-                        <span className="text-xs px-2 py-0.5 rounded bg-violet-900/30 text-violet-400">AI Created</span>
+                <div key={seg.id} className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold">{seg.name}</h3>
+                        {seg.aiGenerated && (
+                          <span className="text-xs px-2 py-0.5 rounded bg-violet-900/30 text-violet-400">AI Created</span>
+                        )}
+                      </div>
+                      {seg.description && (
+                        <p className="text-sm text-zinc-400 mt-1">{seg.description}</p>
+                      )}
+                      <div className="flex items-center gap-4 mt-3 text-xs text-zinc-500">
+                        <span className="flex items-center gap-1">
+                          <Users className="h-3.5 w-3.5" />
+                          {seg.customerCount.toLocaleString()} customers
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3.5 w-3.5" />
+                          {new Date(seg.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handlePreview(seg.id)}
+                        className="px-3 py-1.5 rounded-lg bg-zinc-800 text-xs font-medium hover:bg-zinc-700 transition-colors"
+                      >
+                        {preview?.id === seg.id ? "Hide" : "Preview"}
+                      </button>
+                      <Link
+                        href={`/agent?q=Launch a campaign to segment ${seg.id}`}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600/10 text-violet-400 text-xs font-medium hover:bg-violet-600/20 transition-colors border border-violet-900/30"
+                      >
+                        <Megaphone className="h-3.5 w-3.5" />
+                        Launch with AI
+                      </Link>
+                    </div>
+                  </div>
+
+                  {/* Value strip: revenue + health bar + reachability */}
+                  {(seg.segmentRevenue !== undefined || seg.healthBreakdown || seg.reachable) && (
+                    <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-zinc-400">
+                      {seg.segmentRevenue !== undefined && (
+                        <span className="flex items-center gap-1 text-emerald-400">
+                          <IndianRupee className="h-3 w-3" />
+                          {seg.segmentRevenue.toLocaleString()}
+                        </span>
+                      )}
+                      {seg.healthBreakdown && (() => {
+                        const hb = seg.healthBreakdown!;
+                        const total = hb.loyal + hb.regular + hb.at_risk + hb.churning + hb.new;
+                        if (total === 0) return null;
+                        return (
+                          <div className="flex h-1.5 rounded-full overflow-hidden flex-1 min-w-[80px] max-w-[160px] bg-zinc-800">
+                            {hb.loyal > 0 && <div className="bg-emerald-500" style={{ width: `${(hb.loyal / total) * 100}%` }} title={`Loyal: ${hb.loyal}`} />}
+                            {hb.regular > 0 && <div className="bg-blue-500" style={{ width: `${(hb.regular / total) * 100}%` }} title={`Regular: ${hb.regular}`} />}
+                            {hb.at_risk > 0 && <div className="bg-amber-500" style={{ width: `${(hb.at_risk / total) * 100}%` }} title={`At Risk: ${hb.at_risk}`} />}
+                            {hb.churning > 0 && <div className="bg-red-500" style={{ width: `${(hb.churning / total) * 100}%` }} title={`Churning: ${hb.churning}`} />}
+                            {hb.new > 0 && <div className="bg-zinc-500" style={{ width: `${(hb.new / total) * 100}%` }} title={`New: ${hb.new}`} />}
+                          </div>
+                        );
+                      })()}
+                      {seg.reachable && (
+                        <span className="flex items-center gap-2 text-zinc-500">
+                          <span>📧 {seg.reachable.emailable}</span>
+                          <span>📱 {seg.reachable.textable}</span>
+                        </span>
                       )}
                     </div>
-                    {seg.description && (
-                      <p className="text-sm text-zinc-400 mt-1">{seg.description}</p>
+                  )}
+
+                  {/* Filter DSL display */}
+                  <div className="mt-3 p-3 rounded-lg bg-zinc-950 border border-zinc-800">
+                    <p className="text-xs text-zinc-500 mb-1">Filter Conditions</p>
+                    {/* Plain-English filter summary */}
+                    {seg.filters && (
+                      <p className="text-xs text-zinc-400 italic mb-2">{filterSummary(seg.filters)}</p>
                     )}
-                    <div className="flex items-center gap-4 mt-3 text-xs text-zinc-500">
-                      <span className="flex items-center gap-1">
-                        <Users className="h-3.5 w-3.5" />
-                        {seg.customerCount.toLocaleString()} customers
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Calendar className="h-3.5 w-3.5" />
-                        {new Date(seg.createdAt).toLocaleDateString()}
-                      </span>
+                    <div className="flex flex-wrap gap-2">
+                      <FilterConditions node={seg.filters} />
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handlePreview(seg.id)}
-                      className="px-3 py-1.5 rounded-lg bg-zinc-800 text-xs font-medium hover:bg-zinc-700 transition-colors"
-                    >
-                      {preview?.id === seg.id ? "Hide" : "Preview"}
-                    </button>
-                    <Link
-                      href={`/agent?q=Launch a campaign to segment ${seg.id}`}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600/10 text-violet-400 text-xs font-medium hover:bg-violet-600/20 transition-colors border border-violet-900/30"
-                    >
-                      <Megaphone className="h-3.5 w-3.5" />
-                      Launch with AI
-                    </Link>
-                  </div>
-                </div>
 
-                {/* Filter DSL display */}
-                <div className="mt-3 p-3 rounded-lg bg-zinc-950 border border-zinc-800">
-                  <p className="text-xs text-zinc-500 mb-1">Filter Conditions</p>
-                  <div className="flex flex-wrap gap-2">
-                    {seg.filters?.conditions?.map((c: any, i: number) => (
-                      <span key={i} className="text-xs px-2 py-1 rounded bg-zinc-800 text-zinc-300">
-                        {c.field} {c.op} {JSON.stringify(c.value)}
-                      </span>
-                    )) || <span className="text-xs text-zinc-600">No conditions</span>}
-                  </div>
-                </div>
-
-                {/* Preview panel */}
-                {preview?.id === seg.id && (
-                  <div className="mt-4 border-t border-zinc-800 pt-4">
-                    <p className="text-xs text-zinc-500 mb-2">
-                      Showing {preview.customers.length} of {preview.total} customers
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {preview.customers.map((c: any) => (
-                        <div key={c.id} className="text-xs p-2 rounded bg-zinc-950 border border-zinc-800">
-                          <span className="font-medium">{c.name}</span>
-                          <span className="text-zinc-500 ml-2">{c.city || "—"}</span>
-                          <span className="text-zinc-650 ml-2">
-                            {c.email ? "📧" : ""} {c.phone ? "📱" : ""}
-                          </span>
-                        </div>
-                      ))}
+                  {/* Preview panel */}
+                  {preview?.id === seg.id && (
+                    <div className="mt-4 border-t border-zinc-800 pt-4">
+                      <p className="text-xs text-zinc-500 mb-2">
+                        Showing {preview.customers.length} of {preview.total} customers
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {preview.customers.map((c: any) => (
+                          <div key={c.id} className="text-xs p-2 rounded bg-zinc-950 border border-zinc-800">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-medium text-white">{c.name}</span>
+                              {c.health && <HealthPill health={c.health} />}
+                            </div>
+                            <div className="flex items-center gap-2 text-zinc-500">
+                              <span>{c.city || "—"}</span>
+                              {c.totalSpent > 0 && (
+                                <span className="text-emerald-400">₹{c.totalSpent.toLocaleString()}</span>
+                              )}
+                              {c.daysSinceLastOrder !== null && c.daysSinceLastOrder !== undefined ? (
+                                <span>{c.daysSinceLastOrder}d ago</span>
+                              ) : (
+                                <span>Never</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
             ))}
           </div>
         )}

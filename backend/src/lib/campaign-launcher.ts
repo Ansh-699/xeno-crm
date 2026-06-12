@@ -180,63 +180,74 @@ export async function launchCampaign(input: LaunchInput): Promise<LaunchResult> 
     },
   });
 
-  // 6. Process in chunks of 1000 to prevent memory spikes
+  // 6. Process in chunks of 1000 to prevent memory spikes.
+  //    If any chunk fails we mark the campaign "failed" so the poller never
+  //    treats a partially-written campaign as completed.
   const CHUNK_SIZE = 1000;
-  for (let i = 0; i < contactable.length; i += CHUNK_SIZE) {
-    const chunk = contactable.slice(i, i + CHUNK_SIZE);
-    const chunkCustomerIds = chunk.map((c) => c.id);
-    const { orderStatsMap, topProductMap } = await getMergeFieldData(chunkCustomerIds);
+  try {
+    for (let i = 0; i < contactable.length; i += CHUNK_SIZE) {
+      const chunk = contactable.slice(i, i + CHUNK_SIZE);
+      const chunkCustomerIds = chunk.map((c) => c.id);
+      const { orderStatsMap, topProductMap } = await getMergeFieldData(chunkCustomerIds);
 
-    await prisma.$transaction(async (tx) => {
-      const commsData = chunk.map((customer) => {
-        const stats = orderStatsMap.get(customer.id);
-        const daysSinceLastOrder = stats?.lastOrder
-          ? Math.floor((Date.now() - new Date(stats.lastOrder).getTime()) / 86400000)
-          : null;
+      await prisma.$transaction(async (tx) => {
+        const commsData = chunk.map((customer) => {
+          const stats = orderStatsMap.get(customer.id);
+          const daysSinceLastOrder = stats?.lastOrder
+            ? Math.floor((Date.now() - new Date(stats.lastOrder).getTime()) / 86400000)
+            : null;
 
-        const content = hydrateTemplate(template, {
-          name: customer.name,
-          city: customer.city,
-          top_product: topProductMap.get(customer.id) || null,
-          total_orders: stats?.totalOrders ?? null,
-          days_since_last_order: daysSinceLastOrder,
+          const content = hydrateTemplate(template, {
+            name: customer.name,
+            city: customer.city,
+            top_product: topProductMap.get(customer.id) || null,
+            total_orders: stats?.totalOrders ?? null,
+            days_since_last_order: daysSinceLastOrder,
+          });
+
+          const destination = contactField === "email" ? customer.email! : customer.phone!;
+
+          return {
+            customerId: customer.id,
+            channel: channel.toLowerCase(),
+            destination,
+            content,
+            campaignId: campaign.id,
+          };
         });
 
-        const destination = contactField === "email" ? customer.email! : customer.phone!;
+        await tx.communication.createMany({ data: commsData });
 
-        return {
-          customerId: customer.id,
-          channel: channel.toLowerCase(),
-          destination,
-          content,
+        const createdComms = await tx.communication.findMany({
+          where: { campaignId: campaign.id, customerId: { in: chunkCustomerIds } },
+          select: { id: true, channel: true, destination: true, content: true },
+        });
+
+        const outboxData = createdComms.map((comm) => ({
+          eventType: "SEND_MESSAGE",
+          aggregateId: comm.id,
           campaignId: campaign.id,
-        };
+          payload: {
+            communication_id: comm.id,
+            channel: comm.channel,
+            destination: comm.destination,
+            content: comm.content,
+            idempotency_key: `${campaign.id}:${comm.id}`,
+            callback_url: callbackUrl,
+          },
+          status: "PENDING",
+        }));
+
+        await tx.outbox.createMany({ data: outboxData });
       });
-
-      await tx.communication.createMany({ data: commsData });
-
-      const createdComms = await tx.communication.findMany({
-        where: { campaignId: campaign.id, customerId: { in: chunkCustomerIds } },
-        select: { id: true, channel: true, destination: true, content: true },
-      });
-
-      const outboxData = createdComms.map((comm) => ({
-        eventType: "SEND_MESSAGE",
-        aggregateId: comm.id,
-        campaignId: campaign.id,
-        payload: {
-          communication_id: comm.id,
-          channel: comm.channel,
-          destination: comm.destination,
-          content: comm.content,
-          idempotency_key: `${campaign.id}:${comm.id}`,
-          callback_url: callbackUrl,
-        },
-        status: "PENDING",
-      }));
-
-      await tx.outbox.createMany({ data: outboxData });
+    }
+  } catch (err) {
+    // Mark the campaign failed so the poller does not complete a ghost campaign
+    await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: { status: "failed" },
     });
+    throw err;
   }
 
   return {
@@ -342,62 +353,73 @@ async function launchPerCustomer(
     },
   });
 
-  // Process in chunks
+  // Process in chunks.
+  // If any chunk fails we mark the campaign "failed" so the poller does not
+  // complete a ghost campaign with only partial communications written.
   const CHUNK_SIZE = 1000;
-  for (let i = 0; i < resolved.length; i += CHUNK_SIZE) {
-    const chunk = resolved.slice(i, i + CHUNK_SIZE);
-    const chunkCustomerIds = chunk.map((r) => r.customer.id);
-    const { orderStatsMap, topProductMap } = await getMergeFieldData(chunkCustomerIds);
+  try {
+    for (let i = 0; i < resolved.length; i += CHUNK_SIZE) {
+      const chunk = resolved.slice(i, i + CHUNK_SIZE);
+      const chunkCustomerIds = chunk.map((r) => r.customer.id);
+      const { orderStatsMap, topProductMap } = await getMergeFieldData(chunkCustomerIds);
 
-    await prisma.$transaction(async (tx) => {
-      const commsData = chunk.map(({ customer, channel, destination }) => {
-        const stats = orderStatsMap.get(customer.id);
-        const daysSinceLastOrder = stats?.lastOrder
-          ? Math.floor((Date.now() - new Date(stats.lastOrder).getTime()) / 86400000)
-          : null;
+      await prisma.$transaction(async (tx) => {
+        const commsData = chunk.map(({ customer, channel, destination }) => {
+          const stats = orderStatsMap.get(customer.id);
+          const daysSinceLastOrder = stats?.lastOrder
+            ? Math.floor((Date.now() - new Date(stats.lastOrder).getTime()) / 86400000)
+            : null;
 
-        const template = messages[channel] || "";
-        const content = hydrateTemplate(template, {
-          name: customer.name,
-          city: customer.city,
-          top_product: topProductMap.get(customer.id) || null,
-          total_orders: stats?.totalOrders ?? null,
-          days_since_last_order: daysSinceLastOrder,
+          const template = messages[channel] || "";
+          const content = hydrateTemplate(template, {
+            name: customer.name,
+            city: customer.city,
+            top_product: topProductMap.get(customer.id) || null,
+            total_orders: stats?.totalOrders ?? null,
+            days_since_last_order: daysSinceLastOrder,
+          });
+
+          return {
+            customerId: customer.id,
+            channel,
+            destination,
+            content,
+            campaignId: campaign.id,
+          };
         });
 
-        return {
-          customerId: customer.id,
-          channel,
-          destination,
-          content,
+        await tx.communication.createMany({ data: commsData });
+
+        const createdComms = await tx.communication.findMany({
+          where: { campaignId: campaign.id, customerId: { in: chunkCustomerIds } },
+          select: { id: true, channel: true, destination: true, content: true },
+        });
+
+        const outboxData = createdComms.map((comm) => ({
+          eventType: "SEND_MESSAGE",
+          aggregateId: comm.id,
           campaignId: campaign.id,
-        };
+          payload: {
+            communication_id: comm.id,
+            channel: comm.channel,
+            destination: comm.destination,
+            content: comm.content,
+            idempotency_key: `${campaign.id}:${comm.id}`,
+            callback_url: callbackUrl,
+          },
+          status: "PENDING",
+        }));
+
+        await tx.outbox.createMany({ data: outboxData });
       });
-
-      await tx.communication.createMany({ data: commsData });
-
-      const createdComms = await tx.communication.findMany({
-        where: { campaignId: campaign.id, customerId: { in: chunkCustomerIds } },
-        select: { id: true, channel: true, destination: true, content: true },
-      });
-
-      const outboxData = createdComms.map((comm) => ({
-        eventType: "SEND_MESSAGE",
-        aggregateId: comm.id,
-        campaignId: campaign.id,
-        payload: {
-          communication_id: comm.id,
-          channel: comm.channel,
-          destination: comm.destination,
-          content: comm.content,
-          idempotency_key: `${campaign.id}:${comm.id}`,
-          callback_url: callbackUrl,
-        },
-        status: "PENDING",
-      }));
-
-      await tx.outbox.createMany({ data: outboxData });
+    }
+  } catch (err) {
+    // Mark the campaign failed so the poller does not complete a ghost campaign
+    await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: { status: "failed" },
     });
+    throw err;
   }
 
   return {

@@ -2,7 +2,10 @@
 
 import { useEffect, useState, useRef } from "react";
 import { apiFetch } from "@/lib/api";
-import { Upload, Search, X, Heart, ShieldAlert, Sparkles, UserCheck } from "lucide-react";
+import {
+  Upload, Search, X, Heart, ShieldAlert, Sparkles, UserCheck,
+  Users, IndianRupee, UserX, Mail, Phone,
+} from "lucide-react";
 
 interface CustomerEnriched {
   id: string;
@@ -18,34 +21,98 @@ interface CustomerEnriched {
   avgOrderGapDays: number | null;
 }
 
+interface CustomerSummary {
+  total: number;
+  totalLTV: number;
+  optedOutCount: number;
+  counts: { loyal: number; regular: number; at_risk: number; churning: number; new: number };
+}
+
+type HealthFilter = "all" | "loyal" | "regular" | "at_risk" | "churning" | "new";
+
+const PAGE_SIZE = 50;
+
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<CustomerEnriched[]>([]);
   const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [search, setSearch] = useState("");
+  const [healthFilter, setHealthFilter] = useState<HealthFilter>("all");
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [summary, setSummary] = useState<CustomerSummary | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Load summary KPIs on mount
   useEffect(() => {
-    loadCustomers();
+    apiFetch<CustomerSummary>("/api/insights/customer-summary")
+      .then(setSummary)
+      .catch(() => setSummary(null));
   }, []);
 
-  async function loadCustomers() {
-    setLoading(true);
+  // Reload customers when healthFilter changes (and once on mount). Resets the page.
+  // This effect is the single source of mount/filter-driven loads — there is no separate
+  // [] effect, which previously caused a duplicate racing request on first render.
+  useEffect(() => {
+    setOffset(0);
+    loadCustomers(search, healthFilter, 0, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [healthFilter]);
+
+  async function loadCustomers(
+    q: string,
+    hFilter: HealthFilter,
+    currentOffset: number,
+    append: boolean
+  ) {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
     try {
-      const params = new URLSearchParams({ limit: "50" });
-      if (search) params.set("search", search);
+      const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(currentOffset) });
+      if (q) params.set("search", q);
+      if (hFilter !== "all") params.set("health", hFilter);
       const res = await apiFetch<{ customers: CustomerEnriched[]; total: number }>(
         `/api/insights/customer-health?${params.toString()}`
       );
-      setCustomers(res.customers);
+
+      // Server applies the health filter and returns the FILTERED total, so we use the
+      // rows and total as-is — no client-side filtering or slicing.
+      if (append) {
+        setCustomers((prev) => [...prev, ...res.customers]);
+      } else {
+        setCustomers(res.customers);
+      }
       setTotal(res.total);
     } catch {
-      setCustomers([]);
-      setTotal(0);
+      if (!append) {
+        setCustomers([]);
+        setTotal(0);
+      }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
+  }
+
+  function handleSearch(q: string) {
+    setSearch(q);
+    setOffset(0);
+    loadCustomers(q, healthFilter, 0, false);
+  }
+
+  function handleHealthFilter(h: HealthFilter) {
+    // Just update state; the [healthFilter] effect resets the offset and reloads.
+    setHealthFilter(h);
+  }
+
+  function handleLoadMore() {
+    const newOffset = offset + PAGE_SIZE;
+    setOffset(newOffset);
+    loadCustomers(search, healthFilter, newOffset, true);
   }
 
   async function handleCSVUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -67,7 +134,12 @@ export default function CustomersPage() {
         } else {
           alert(`Imported ${data.count} customers`);
         }
-        loadCustomers();
+        setOffset(0);
+        loadCustomers(search, healthFilter, 0, false);
+        // Refresh summary too
+        apiFetch<CustomerSummary>("/api/insights/customer-summary")
+          .then(setSummary)
+          .catch(() => {});
       } else {
         alert(`Import failed: ${data.error || "Unknown error"}`);
       }
@@ -119,8 +191,18 @@ export default function CustomersPage() {
     }
   };
 
+  const healthPills: { key: HealthFilter; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "loyal", label: "Loyal" },
+    { key: "regular", label: "Regular" },
+    { key: "at_risk", label: "At Risk" },
+    { key: "churning", label: "Churning" },
+    { key: "new", label: "New" },
+  ];
+
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Customers</h1>
@@ -134,11 +216,11 @@ export default function CustomersPage() {
               placeholder="Search..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && loadCustomers()}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch(search)}
               className="pl-9 pr-8 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 w-64"
             />
             {search && (
-              <button onClick={() => { setSearch(""); loadCustomers(); }} className="absolute right-2 top-1/2 -translate-y-1/2">
+              <button onClick={() => { setSearch(""); handleSearch(""); }} className="absolute right-2 top-1/2 -translate-y-1/2">
                 <X className="h-3.5 w-3.5 text-zinc-500" />
               </button>
             )}
@@ -151,16 +233,82 @@ export default function CustomersPage() {
         </div>
       </div>
 
+      {/* KPI Cards */}
+      {summary && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Users className="h-4 w-4 text-zinc-400" />
+              <span className="text-xs text-zinc-500">Total Customers</span>
+            </div>
+            <p className="text-xl font-bold text-white">{summary.total.toLocaleString()}</p>
+          </div>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <IndianRupee className="h-4 w-4 text-emerald-400" />
+              <span className="text-xs text-zinc-500">Total LTV</span>
+            </div>
+            <p className="text-xl font-bold text-emerald-400">₹{summary.totalLTV.toLocaleString()}</p>
+          </div>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Heart className="h-4 w-4 text-emerald-400 fill-emerald-400" />
+              <span className="text-xs text-zinc-500">Loyal</span>
+            </div>
+            <p className="text-xl font-bold text-white">{summary.counts.loyal.toLocaleString()}</p>
+          </div>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <ShieldAlert className="h-4 w-4 text-amber-400" />
+              <span className="text-xs text-zinc-500">At Risk</span>
+            </div>
+            <p className="text-xl font-bold text-white">{summary.counts.at_risk.toLocaleString()}</p>
+          </div>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <ShieldAlert className="h-4 w-4 text-red-400" />
+              <span className="text-xs text-zinc-500">Churning</span>
+            </div>
+            <p className="text-xl font-bold text-white">{summary.counts.churning.toLocaleString()}</p>
+          </div>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <UserX className="h-4 w-4 text-zinc-400" />
+              <span className="text-xs text-zinc-500">Opted-Out %</span>
+            </div>
+            <p className="text-xl font-bold text-white">
+              {summary.total > 0 ? ((summary.optedOutCount / summary.total) * 100).toFixed(1) : "0.0"}%
+            </p>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="text-zinc-500 text-sm">Loading customers & calculating stats...</div>
       ) : (
         <>
-          <div className="flex items-center justify-between text-sm text-zinc-500">
-            <span>{total.toLocaleString()} customers total</span>
-            <div className="flex items-center gap-4 text-xs">
+          {/* Health filter pills + total count */}
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              {healthPills.map((p) => (
+                <button
+                  key={p.key}
+                  onClick={() => handleHealthFilter(p.key)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    healthFilter === p.key
+                      ? "bg-zinc-700 text-white"
+                      : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:border-zinc-700"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-4 text-xs text-zinc-500">
+              <span>{total.toLocaleString()} customers total</span>
               <span className="flex items-center gap-1"><Heart className="h-3 w-3 text-emerald-400 fill-emerald-400" /> Loyal (5+ orders)</span>
-              <span className="flex items-center gap-1"><ShieldAlert className="h-3 w-3 text-amber-400" /> At Risk (Idle &gt; 2x frequency)</span>
-              <span className="flex items-center gap-1"><ShieldAlert className="h-3 w-3 text-red-400" /> Churning (Idle &gt; 60 days)</span>
+              <span className="flex items-center gap-1"><ShieldAlert className="h-3 w-3 text-amber-400" /> At Risk</span>
+              <span className="flex items-center gap-1"><ShieldAlert className="h-3 w-3 text-red-400" /> Churning (&gt;60d)</span>
             </div>
           </div>
 
@@ -175,13 +323,14 @@ export default function CustomersPage() {
                     <th className="text-right px-4 py-3 font-medium text-zinc-400">Total Spend</th>
                     <th className="text-center px-4 py-3 font-medium text-zinc-400">Orders</th>
                     <th className="text-center px-4 py-3 font-medium text-zinc-400">Last Active</th>
+                    <th className="text-center px-4 py-3 font-medium text-zinc-400">Avg Gap</th>
                     <th className="text-center px-4 py-3 font-medium text-zinc-400">Channel Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/40">
                   {customers.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">
+                      <td colSpan={8} className="px-4 py-8 text-center text-zinc-500">
                         No customers found. Import a CSV or use the AI Agent.
                       </td>
                     </tr>
@@ -191,7 +340,14 @@ export default function CustomersPage() {
                         <td className="px-4 py-3 font-medium">
                           <div>
                             <p className="text-white">{c.name}</p>
-                            <p className="text-xs text-zinc-500 font-mono mt-0.5">{c.email || c.phone || "—"}</p>
+                            <p className="flex items-center gap-1 text-xs text-zinc-500 font-mono mt-0.5">
+                              <Mail className="h-3 w-3 shrink-0" />
+                              {c.email || <span className="text-zinc-700">—</span>}
+                            </p>
+                            <p className="flex items-center gap-1 text-xs text-zinc-500 font-mono mt-0.5">
+                              <Phone className="h-3 w-3 shrink-0" />
+                              {c.phone || <span className="text-zinc-700">—</span>}
+                            </p>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-zinc-400">{c.city || "—"}</td>
@@ -201,9 +357,10 @@ export default function CustomersPage() {
                         </td>
                         <td className="px-4 py-3 text-center text-zinc-300 tabular-nums">{c.orderCount}</td>
                         <td className="px-4 py-3 text-center text-zinc-400">
-                          {c.daysSinceLastOrder !== null
-                            ? `${c.daysSinceLastOrder}d ago`
-                            : "Never"}
+                          {c.daysSinceLastOrder !== null ? `${c.daysSinceLastOrder}d ago` : "Never"}
+                        </td>
+                        <td className="px-4 py-3 text-center text-zinc-400 tabular-nums">
+                          {c.avgOrderGapDays !== null ? `${c.avgOrderGapDays}d` : "—"}
                         </td>
                         <td className="px-4 py-3 text-center">
                           {c.optedOut ? (
@@ -219,6 +376,19 @@ export default function CustomersPage() {
               </table>
             </div>
           </div>
+
+          {/* Load more */}
+          {customers.length < total && (
+            <div className="flex justify-center pt-2">
+              <button
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="px-6 py-2 rounded-lg bg-zinc-800 text-sm font-medium text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+              >
+                {loadingMore ? "Loading..." : `Load more (${total - customers.length} remaining)`}
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

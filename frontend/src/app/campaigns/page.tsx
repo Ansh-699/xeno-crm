@@ -205,7 +205,9 @@ function LiveStats({
     setLoadingNextStep(true);
     setNextStep(null);
     try {
-      const prompt = `Based on the performance metrics of campaign ${campaignId}, what is the single next marketing action I should take? Provide a very concise recommendation.`;
+      // Ask for a direct text recommendation — explicitly tell the agent not to call tools
+      // so the response comes back as plain text, not a tool_result.
+      const prompt = `Based on campaign ${campaignId}'s performance, give me ONE concise next marketing action I should take. Reply in 2-3 sentences of plain text only — do NOT call any tools.`;
       const res = await apiStream("/api/agent/run", { message: prompt });
       if (!res.ok) throw new Error("Failed");
 
@@ -226,12 +228,31 @@ function LiveStats({
           if (!line.trim()) continue;
           try {
             const event = JSON.parse(line);
+            // Capture streamed text tokens
             if (event.type === "text" && event.text) {
               fullText += event.text;
               setNextStep(fullText);
             }
+            // Also surface any tool_result brief if the agent ignores the instruction
+            if (
+              event.type === "tool_result" &&
+              event.toolResult?.name === "analyze_performance"
+            ) {
+              try {
+                const out = JSON.parse(event.toolResult.output);
+                if (out.brief && !fullText) {
+                  fullText = out.brief;
+                  setNextStep(fullText);
+                }
+              } catch {}
+            }
           } catch {}
         }
+      }
+
+      // If the agent returned nothing at all, show a fallback
+      if (!fullText) {
+        setNextStep("Unable to generate a recommendation. Try the Generate Brief button above first.");
       }
     } catch {
       setNextStep("Failed to generate recommendations. Please try again.");
@@ -254,7 +275,7 @@ function LiveStats({
         <Radio className="h-4 w-4 text-emerald-400" />
         <span className="text-sm font-medium">Live Delivery Stats</span>
         {isSmsOnly && (
-          <span className="text-[10px] text-zinc-655 ml-auto bg-amber-950/20 text-amber-500 px-2 py-0.5 rounded border border-amber-900/30">
+          <span className="text-[10px] text-zinc-600 ml-auto bg-amber-950/20 text-amber-500 px-2 py-0.5 rounded border border-amber-900/30">
             SMS — delivery tracking only
           </span>
         )}
@@ -322,7 +343,7 @@ function LiveStats({
             {aiBrief}
           </p>
         ) : (
-          <p className="text-xs text-zinc-650 italic">AI performance brief will auto-generate once campaign is complete.</p>
+          <p className="text-xs text-zinc-600 italic">AI performance brief will auto-generate once campaign is complete.</p>
         )}
 
         {/* Proactive Next Steps */}
@@ -363,7 +384,7 @@ function StatCard({ label, value, color }: { label: string; value: number; color
   return (
     <div className="rounded-lg bg-zinc-900 border border-zinc-800 p-3 text-center">
       <p className={`text-xl font-semibold ${color}`}>{value}</p>
-      <p className="text-xs text-zinc-505 mt-0.5">{label}</p>
+      <p className="text-xs text-zinc-500 mt-0.5">{label}</p>
     </div>
   );
 }

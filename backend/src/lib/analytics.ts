@@ -73,6 +73,13 @@ export async function getAnalyticsData() {
       const read = Number(stats.read || 0);
       const clicked = Number(stats.clicked || 0);
 
+      // "opened" and "read" are the same rank-3 engagement stage (email emits "opened",
+      // WhatsApp emits "read"), so a delivered message reaches it at most once. Treat the
+      // pair as a single unique-open count and divide by DELIVERED (not sent); cap at
+      // delivered so the rate can never exceed 100%.
+      const uniqueOpened = Math.min(opened + read, delivered);
+      const uniqueClicked = Math.min(clicked, delivered);
+
       return {
         id: camp.id,
         name: camp.name,
@@ -87,7 +94,8 @@ export async function getAnalyticsData() {
         channels,
         stats: { sent, delivered, failed, opened, read, clicked },
         deliveryRate: sent > 0 ? Math.round((delivered / sent) * 100) : 0,
-        openRate: sent > 0 ? Math.round(((opened + read) / sent) * 100) : 0,
+        openRate: delivered > 0 ? Math.round((uniqueOpened / delivered) * 100) : 0,
+        clickRate: delivered > 0 ? Math.round((uniqueClicked / delivered) * 100) : 0,
         // Conversion attribution
         conversions: 0,
         attributedRevenue: 0,
@@ -159,7 +167,9 @@ export async function getAnalyticsData() {
     avgDeliveryRate:
       totalSent > 0 ? Math.round((totalDelivered / totalSent) * 100) : 0,
     avgOpenRate:
-      totalSent > 0 ? Math.round((totalOpened / totalSent) * 100) : 0,
+      totalDelivered > 0
+        ? Math.min(100, Math.round((totalOpened / totalDelivered) * 100))
+        : 0,
     overallConversionRate:
       totalDelivered > 0 ? Math.round((totalConversions / totalDelivered) * 100) : 0,
     bestChannel,

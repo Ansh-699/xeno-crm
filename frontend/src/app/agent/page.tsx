@@ -2,8 +2,8 @@
 
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { apiStream } from "@/lib/api";
-import { Send, Bot, User, Wrench, CheckCircle, XCircle, Loader2, AlertTriangle } from "lucide-react";
+import { apiStream, hasAICredentials } from "@/lib/api";
+import { Send, Bot, User, Wrench, CheckCircle, XCircle, Loader2, AlertTriangle, Key } from "lucide-react";
 import { AISettingsPanel } from "@/components/AISettings";
 
 interface Message {
@@ -33,8 +33,14 @@ function AgentContent() {
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const [hasAutoSent, setHasAutoSent] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [credentialsOk, setCredentialsOk] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Check credentials on mount and whenever the settings panel closes
+  useEffect(() => {
+    setCredentialsOk(hasAICredentials());
+  }, [showSettings]);
 
   useEffect(() => {
     const q = searchParams.get("q");
@@ -296,6 +302,22 @@ function AgentContent() {
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin space-y-4 pb-4">
+        {/* No-credentials banner — shown until the user configures an API key */}
+        {!credentialsOk && (
+          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg bg-amber-950/30 border border-amber-800/40 text-amber-300 text-xs">
+            <Key className="h-3.5 w-3.5 flex-shrink-0" />
+            <span>
+              ⚙️ Set your API key in{" "}
+              <button
+                onClick={() => setShowSettings(true)}
+                className="underline underline-offset-2 hover:text-amber-200 transition-colors"
+              >
+                Settings
+              </button>{" "}
+              before chatting.
+            </span>
+          </div>
+        )}
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <Bot className="h-12 w-12 text-zinc-700 mb-4" />
@@ -403,7 +425,9 @@ function MessageBubble({
         <div className="rounded-xl border border-amber-800/50 bg-amber-950/30 px-4 py-3 max-w-[70%]">
           <p className="text-sm font-medium text-amber-200 mb-2">Confirmation Required</p>
           <p className="text-sm text-zinc-300 mb-1">
-            Launch campaign to segment?
+            {message.confirmationData.toolName === "launch_campaign"
+              ? "Launch this campaign to the selected segment?"
+              : `Run "${message.confirmationData.toolName}"?`}
           </p>
           <pre className="text-xs text-zinc-400 bg-zinc-950 rounded p-2 mb-3 overflow-x-auto">
             {JSON.stringify(message.confirmationData.input, null, 2)}

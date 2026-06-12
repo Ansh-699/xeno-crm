@@ -55,10 +55,9 @@ export function googleProvider(apiKey: string, modelName = DEFAULT_MODEL): LLMPr
   const genAI = new GoogleGenerativeAI(apiKey);
   return {
     async generate({ system, messages, tools }): Promise<LLMResponse> {
-      const model = genAI.getGenerativeModel({
-        model: modelName,
-        systemInstruction: system,
-        tools: [
+      const modelConfig: any = { model: modelName, systemInstruction: system };
+      if (tools.length > 0) {
+        modelConfig.tools = [
           {
             functionDeclarations: tools.map((t) => ({
               name: t.name,
@@ -66,8 +65,19 @@ export function googleProvider(apiKey: string, modelName = DEFAULT_MODEL): LLMPr
               parameters: sanitizeSchema(t.inputSchema) as any,
             })),
           },
-        ],
-      });
+        ];
+      }
+      const model = genAI.getGenerativeModel(modelConfig);
+
+      // Map toolUseId → function name from prior assistant tool_use blocks so tool_result
+      // blocks can be correlated by their real name rather than relying on the synthetic
+      // "name-N" id format (which breaks for ids minted by other providers).
+      const toolNameById = new Map<string, string>();
+      for (const m of messages) {
+        for (const b of m.content as any[]) {
+          if (b.type === "tool_use" && b.id) toolNameById.set(b.id, b.name);
+        }
+      }
 
       const contents = messages.map((m: LLMMessage) => ({
         role: m.role === "assistant" ? "model" : "user",
@@ -75,9 +85,8 @@ export function googleProvider(apiKey: string, modelName = DEFAULT_MODEL): LLMPr
           if (b.type === "text") return { text: b.text };
           if (b.type === "tool_use") return { functionCall: { name: b.name, args: b.input } };
           // tool_result: Gemini requires the function name (not a synthetic call ID).
-          // Our synthetic IDs are formatted as "toolname-index", so strip the trailing
-          // "-N" to recover the original function name.
-          const fnName = b.toolUseId.replace(/-\d+$/, "");
+          // Prefer the mapped name; fall back to stripping a trailing "-N" suffix.
+          const fnName = toolNameById.get(b.toolUseId) ?? b.toolUseId.replace(/-\d+$/, "");
           return { functionResponse: { name: fnName, response: { content: b.content } } };
         }),
       }));

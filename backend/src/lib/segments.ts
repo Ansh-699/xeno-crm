@@ -134,13 +134,28 @@ function mapOperator(op: string, value: any, isStringField: boolean): any {
 function buildCondition(condition: Condition): any {
   const { field, op, value } = condition;
 
-  // Virtual field: "lastOrderDays" → orders.orderedAt >= now() - N days
+  // Virtual field: "lastOrderDays" → operator-aware recency filter.
+  //   within N days  (lt/lte/"<"/"within")  → has an order on/after the cutoff
+  //   older / dormant (gt/gte/">"/"older")  → has NO order on/after the cutoff
   if (field === "lastOrderDays") {
     const days = typeof value === "string" ? parseInt(value) : value;
     if (isNaN(days)) {
       throw new Error(`Invalid value for lastOrderDays: ${value}`);
     }
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const normalized = OP_ALIASES[op] ?? op;
+    const isDormant = ["gt", "gte", "older"].includes(normalized);
+    if (isDormant) {
+      // "haven't ordered in N+ days" — no order within the window
+      return {
+        orders: {
+          none: {
+            orderedAt: { gte: cutoff },
+          },
+        },
+      };
+    }
+    // "ordered within the last N days"
     return {
       orders: {
         some: {
@@ -246,6 +261,23 @@ export function filtersToWhere(filters: FilterGroup | any): any {
   return { AND: conditions };
 }
 
+// Canonical operators plus their symbolic aliases and the lastOrderDays semantic ops.
+const KNOWN_OPS = new Set<string>([
+  "eq", "neq", "gt", "gte", "lt", "lte", "contains", "in",
+  ...Object.keys(OP_ALIASES),
+  "within", "older",
+]);
+
+// A leaf condition is valid only if it names a field, uses a known operator, and
+// carries a value. `value === ""`/`undefined` is rejected so that a half-built
+// condition (e.g. `{ field: "city", op: "eq" }`) can't silently match-all.
+function isValidLeaf(c: any): boolean {
+  if (!c || typeof c.field !== "string" || c.field.length === 0) return false;
+  if (typeof c.op !== "string" || !KNOWN_OPS.has(c.op)) return false;
+  if (c.value === undefined || c.value === null || c.value === "") return false;
+  return true;
+}
+
 export function validateFilters(filters: any): boolean {
   if (!filters) return false;
   if (isFilterGroup(filters)) {
@@ -253,9 +285,8 @@ export function validateFilters(filters: any): boolean {
     if (!Array.isArray(filters.conditions) || filters.conditions.length === 0)
       return false;
     return filters.conditions.every((c: any) =>
-      isFilterGroup(c) ? validateFilters(c) : !!c.field && !!c.op
+      isFilterGroup(c) ? validateFilters(c) : isValidLeaf(c)
     );
   }
-  if (filters.field && filters.op) return true;
-  return false;
+  return isValidLeaf(filters);
 }

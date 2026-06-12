@@ -22,6 +22,11 @@
 
 ### Flow
 
+> The pseudo-code below is illustrative of the control flow and invariants. The real loop
+> calls `provider.generate({ system, messages, tools })` once per turn (non-streaming) and
+> reads `toolUses` / `stopReason` from the response to decide whether to run a tool, pause at
+> the confirmation gate, or finish — see the Provider Abstraction section below.
+
 ```typescript
 async function* agentLoop(runId: string, input: { userMessage?: string; approved?: boolean }) {
   let run = await loadRun(runId);
@@ -94,11 +99,13 @@ async function* agentLoop(runId: string, input: { userMessage?: string; approved
 
 ## launch_campaign Idempotency
 
-The agent generates a `launchToken` UUID during planning. This token is checked before creating the campaign:
+`launch_campaign` derives a **stable** `launchToken` from the logical intent — a SHA-256 hash of `segmentId : name : JSON(messages)` — rather than minting a fresh UUID per call. The token is checked before the campaign is created:
 
 ```typescript
 async function executeLaunchCampaign(input: LaunchInput) {
-  const existing = await db.campaign.findUnique({ where: { launchToken: input.launchToken } });
+  const launchToken = sha256(`${input.segmentId}:${input.name}:${JSON.stringify(input.messages)}`);
+
+  const existing = await db.campaign.findUnique({ where: { launchToken } });
   if (existing) return { campaignId: existing.id, alreadyLaunched: true };
 
   // Create campaign + communications + outbox in one transaction
@@ -106,7 +113,7 @@ async function executeLaunchCampaign(input: LaunchInput) {
 }
 ```
 
-Double-click, agent retry, or network replay hits the idempotency check — no duplicate campaigns.
+Because the token is derived from the request, a double-click, agent retry, resumed `AgentRun`, network replay, or the model re-emitting the same tool call all collapse to the **same** token — the idempotency check returns the original campaign instead of duplicating the send. (A fresh UUID per call would have defeated this — the bug this design fixes.)
 
 ---
 
@@ -206,33 +213,38 @@ Re-running `recommend_channels` on the same segment uses upsert (update existing
 
 ---
 
-## AI Provider Abstraction
+## AI Provider Abstraction (BYOK, multi-provider)
+
+The agent is provider-agnostic. The user supplies their own key per request (Bring Your Own Key) via the UI Settings panel; credentials travel in HTTP headers and are never logged or persisted server-side. `makeProvider(creds)` returns the right adapter for `anthropic`, `openai`, or `google` — **all three are implemented**.
 
 ```typescript
-interface AIProvider {
-  streamWithTools(messages: Message[], tools: ToolDef[]): AsyncGenerator<StreamEvent>;
-  generate(prompt: string): Promise<string>;
+type LLMProviderName = "anthropic" | "openai" | "google";
+
+interface LLMProvider {
+  generate(opts: {
+    system: string;
+    messages: LLMMessage[];
+    tools: LLMToolDef[];
+    maxTokens?: number;
+  }): Promise<LLMResponse>;
 }
 
-type StreamEvent =
-  | { type: "text"; content: string }
-  | { type: "tool_call"; id: string; name: string; input: unknown }
-  | { type: "done" };
-
-class ClaudeProvider implements AIProvider {
-  // Anthropic SDK — handles tool_use content blocks, streaming
+interface LLMResponse {
+  text: string;
+  toolUses: Array<{ id: string; name: string; input: any }>;
+  stopReason: string;
 }
 
-// DEFINED but NOT implemented in v1:
-// class GeminiProvider implements AIProvider { ... }
+function makeProvider(creds: LLMCredentials): LLMProvider {
+  switch (creds.provider) {
+    case "anthropic": return anthropicProvider(creds.apiKey, creds.model);
+    case "openai":    return openaiProvider(creds.apiKey, creds.model);
+    case "google":    return googleProvider(creds.apiKey, creds.model);
+  }
+}
 ```
 
-### Config
-```typescript
-const AI_CONFIG = {
-  segmentation: process.env.AI_SEGMENTATION_PROVIDER || 'claude',
-  messageGeneration: process.env.AI_MESSAGE_PROVIDER || 'claude',
-  insights: process.env.AI_INSIGHTS_PROVIDER || 'claude',
-  agentOrchestration: 'claude', // always Claude — multi-step tool calling
-};
-```
+Notes:
+- The agent loop calls `provider.generate(...)` per turn and inspects `toolUses` / `stopReason` to decide whether to run tools or finish — a normalized, non-streaming tool-calling contract shared across all three providers.
+- The Google adapter sanitizes tool schemas to Gemini's OpenAPI subset (strips `additionalProperties`, `$schema`, etc.) so the same tool definitions work everywhere.
+- The app is fully functional **without** any LLM key: insight/narrative/brief surfaces fall back to data-grounded, non-fabricated content.
