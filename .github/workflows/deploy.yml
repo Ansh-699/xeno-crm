@@ -1,0 +1,49 @@
+name: Deploy
+
+# Runs after CI passes on master. Deploys to the DigitalOcean droplet over SSH.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   SSH_HOST         e.g. 64.227.148.159
+#   SSH_USER         e.g. root
+#   SSH_PRIVATE_KEY  contents of the private key that can SSH into the droplet
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Only deploy if CI succeeded (or when triggered manually).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+            cd /opt/xeno
+            echo "==> Pulling latest code"
+            git fetch --all
+            git reset --hard origin/master
+            echo "==> Building images"
+            docker compose -f docker-compose.prod.yml build
+            echo "==> Applying database migrations (no seed)"
+            docker compose -f docker-compose.prod.yml run --rm migrate
+            echo "==> Restarting services"
+            docker compose -f docker-compose.prod.yml up -d channel-service backend poller frontend
+            echo "==> Pruning old images"
+            docker image prune -f
+            echo "==> Health check"
+            sleep 5
+            curl -fsS http://127.0.0.1:3001/health && echo " OK"

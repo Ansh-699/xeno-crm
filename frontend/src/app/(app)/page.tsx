@@ -34,9 +34,13 @@ export default function DashboardPage() {
   const [insights, setInsights] = useState<AIInsight[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingInsights, setLoadingInsights] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     async function load() {
+      setLoading(true);
+      setError(null);
       try {
         const [statsData, camps] = await Promise.all([
           apiFetch<Stats>("/api/stats"),
@@ -49,14 +53,14 @@ export default function DashboardPage() {
           campaigns: statsData.campaigns || 0,
           deliveryRate: statsData.deliveryRate || 0,
         });
-      } catch {
-        setStats({ customers: 0, segments: 0, campaigns: 0, deliveryRate: 0 });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load dashboard data.");
       } finally {
         setLoading(false);
       }
     }
     load();
-  }, []);
+  }, [reloadKey]);
 
   useEffect(() => {
     async function loadInsights() {
@@ -73,7 +77,47 @@ export default function DashboardPage() {
   }, []);
 
   if (loading) {
-    return <div className="text-muted-foreground">Loading Dashboard...</div>;
+    return (
+      <div className="space-y-8 max-w-7xl mx-auto animate-pulse">
+        <div className="space-y-2">
+          <div className="h-8 w-48 rounded-lg bg-muted" />
+          <div className="h-4 w-80 rounded bg-muted" />
+        </div>
+        {/* Stat card skeletons */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-xl border border-border bg-card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="h-3 w-20 rounded bg-muted" />
+                <div className="h-8 w-8 rounded-lg bg-muted" />
+              </div>
+              <div className="h-8 w-24 rounded bg-muted" />
+            </div>
+          ))}
+        </div>
+        {/* Large panel skeletons */}
+        <div className="h-64 rounded-2xl border border-border bg-card" />
+        <div className="h-48 rounded-2xl border border-border bg-card" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto">
+        <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-8 flex flex-col items-center justify-center text-center">
+          <AlertTriangle className="h-10 w-10 text-red-500 mb-4" />
+          <h2 className="text-lg font-bold tracking-tight text-foreground">Couldn't load the dashboard</h2>
+          <p className="text-sm text-muted-foreground mt-1 mb-6 max-w-md">{error}</p>
+          <button
+            onClick={() => setReloadKey((k) => k + 1)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const cards = [

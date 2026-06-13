@@ -1,0 +1,77 @@
+# Production stack — uses MANAGED Postgres (Neon) + Redis instead of local
+# containers. Secrets are read from the (gitignored) .env file on the host:
+#   DATABASE_URL, REDIS_URL, ANTHROPIC_API_KEY
+#
+# Deploy:   docker compose -f docker-compose.prod.yml up -d --build
+# Migrate:  docker compose -f docker-compose.prod.yml run --rm migrate
+# Seed:     docker compose -f docker-compose.prod.yml --profile seed run --rm seed
+#           (DESTRUCTIVE — wipes all tables, run only on first setup)
+services:
+  channel-service:
+    build: ./channel-service
+    restart: unless-stopped
+    environment:
+      PORT: "4000"
+      CALLBACK_BASE_URL: "http://backend:3001"
+    expose:
+      - "4000"
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      DATABASE_URL: "${DATABASE_URL}"
+      REDIS_URL: "${REDIS_URL}"
+      CHANNEL_SERVICE_URL: "http://channel-service:4000"
+      CALLBACK_URL: "http://backend:3001/api/receipts"
+      PORT: "3001"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+    depends_on:
+      channel-service:
+        condition: service_started
+
+  # Idempotent — applies pending migrations only. Safe to run on every deploy.
+  migrate:
+    build: ./backend
+    environment:
+      DATABASE_URL: "${DATABASE_URL}"
+    command: ["npx", "prisma", "migrate", "deploy"]
+    restart: "no"
+
+  # DESTRUCTIVE one-off seeder. Guarded behind the "seed" profile so it is never
+  # started by `up` / `run migrate`. Run manually only for first-time setup.
+  seed:
+    profiles: ["seed"]
+    build: ./backend
+    environment:
+      DATABASE_URL: "${DATABASE_URL}"
+    command: ["npx", "tsx", "prisma/seed.ts"]
+    restart: "no"
+
+  poller:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "${DATABASE_URL}"
+      REDIS_URL: "${REDIS_URL}"
+      CHANNEL_SERVICE_URL: "http://channel-service:4000"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+    depends_on:
+      channel-service:
+        condition: service_started
+    command: ["npx", "tsx", "src/worker/poller.ts"]
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: "https://xeno.ansht.tech"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: "https://xeno.ansht.tech"
+    depends_on:
+      - backend
