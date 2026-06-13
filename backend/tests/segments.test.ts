@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { filtersToWhere, validateFilters } from "./segments";
+import { filtersToWhere, validateFilters } from "../src/lib/segments";
 
 describe("filtersToWhere", () => {
   it("handles a simple eq filter on a direct string field (case-insensitive)", () => {
@@ -166,4 +166,3 @@ describe("validateFilters", () => {
     ).toBe(true);
   });
 });
-

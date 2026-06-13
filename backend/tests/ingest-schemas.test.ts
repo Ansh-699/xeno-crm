@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CustomerInput, OrderInput } from "./ingest-schemas";
+import { CustomerInput, OrderInput } from "../src/lib/ingest-schemas";
 
 describe("CustomerInput", () => {
   it("accepts a minimal valid customer and applies defaults", () => {

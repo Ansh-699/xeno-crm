@@ -109,3 +109,35 @@ Scope: ~2k customers, ~8k orders, campaigns up to ~2k recipients, single region,
 **Did:** Poller records `processingAt = NOW()` when claiming a batch. The reaper resets rows where `status = 'PROCESSING' AND processingAt < NOW() - 60s` — not `createdAt`. This prevents the reaper from resetting an in-flight row just because it was created long ago.
 
 **Why:** `createdAt` is the row's birth timestamp. A batch claimed 2 seconds ago on a 10-minute-old row would be incorrectly reaped if `createdAt` were the threshold — causing duplicate delivery.
+
+---
+
+## 12. Unindexed read paths (segment lists & full-table scans)
+
+**Did:** `GET /api/segments` runs a per-segment `count` + `findMany` against the live
+customer table (one pair of queries per segment). The customer-summary endpoint and the
+server-side health filter both perform full-table scans over `Customer` / `Order`.
+
+**Why:** At ~2k customers these are fast enough and avoid maintaining a cached/materialised
+count that would drift on every customer mutation (see §9). The cost is **linear** —
+acceptable at this size, but it grows with the customer count and with the number of
+segments.
+
+**At scale:** Materialise segment sizes (DB trigger or short-TTL Redis cache), paginate and
+index the summary/health queries, and push aggregates to read replicas / a columnar store.
+
+---
+
+## 13. `seen_keys` eviction is a hard `clear()` at 1M keys
+
+**Did:** The channel service's in-memory idempotency set (`seen_keys`) is bounded by a hard
+`clear()` once it reaches 1,000,000 keys, rather than per-key TTL/LRU eviction.
+
+**Why:** Simple and allocation-free; 1M keys is far above any realistic single-run volume at
+this scale. The trade-off is that a callback whose key was just evicted at the exact 1M
+boundary could be reprocessed — a **rare boundary duplicate**. This is harmless because the
+CRM receipt handler is itself idempotent (`@@unique([communicationId, status])` → P2002 →
+200), so a duplicate callback is absorbed without double-counting.
+
+**At scale:** Replace the hard clear with an LRU / TTL eviction policy (or an external dedup
+store) so eviction is gradual rather than a periodic full flush.

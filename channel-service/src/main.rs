@@ -103,6 +103,15 @@ fn is_callback_allowed(url_str: &str, allowed_host: &str) -> bool {
                 if v6.is_loopback() {
                     return false;
                 }
+                // Reject IPv6 link-local (fe80::/10) and unique-local (fc00::/7).
+                let segs = v6.segments();
+                let first = segs[0];
+                if (first & 0xffc0) == 0xfe80 {
+                    return false; // link-local fe80::/10
+                }
+                if (first & 0xfe00) == 0xfc00 {
+                    return false; // unique-local fc00::/7
+                }
             }
         }
     }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hydrateTemplate } from "./campaign-launcher";
+import { hydrateTemplate } from "../src/lib/campaign-launcher";
 
 describe("hydrateTemplate", () => {
   it("substitutes all known merge fields correctly", () => {

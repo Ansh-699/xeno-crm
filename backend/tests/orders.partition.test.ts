@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { partitionOrdersByCustomer, IndexedOrder } from "./orders";
-import type { OrderInputT } from "../lib/ingest-schemas";
+import { partitionOrdersByCustomer, IndexedOrder } from "../src/routes/orders";
+import type { OrderInputT } from "../src/lib/ingest-schemas";
 
 function data(customerId: string, externalId?: string): OrderInputT {
   return {
@@ -31,9 +31,6 @@ describe("partitionOrdersByCustomer", () => {
   });
 
   it("uses the carried original row number, not the array position", () => {
-    // Simulates: request rows 1 & 2 failed zod validation and were dropped, so the
-    // surviving rows start at original index 3. A linkage error must report row 4,
-    // not its array position (2).
     const rows = [indexed(3, "known"), indexed(4, "ghost")];
     const { insertable, errors } = partitionOrdersByCustomer(rows, new Set(["known"]));
 

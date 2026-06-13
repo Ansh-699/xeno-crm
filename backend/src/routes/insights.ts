@@ -459,24 +459,36 @@ router.get("/suggested-segments", async (req: Request, res: Response) => {
     let suggestions: any[] = [];
 
     if (!creds) {
+      // No LLM key: return generic starter templates clearly labelled as such.
+      // These are NOT data-driven AI suggestions — they are common segment archetypes
+      // useful as a starting point before real campaign data exists. The one
+      // location-based template is grounded in the actual top city from the data.
+      const topCity = cityDist.length > 0 ? cityDist[0].city : null;
       suggestions = [
         {
-          name: "VIP Dormant Coffees",
-          description: "VIP customers who spent over ₹5,000 but haven't placed an order in over 45 days.",
+          name: "Win-Back: Dormant High-Spenders",
+          description: "Customers with high past spend who haven't ordered recently — prime candidates for a re-engagement discount.",
           naturalLanguage: "Customers who spent over 5000 and last order was more than 45 days ago",
           priority: "high",
+          source: "starter",
         },
         {
-          name: "Delhi Loyalists",
-          description: "Highly engaged customers located in Delhi with at least 5 orders.",
-          naturalLanguage: "Customers in Delhi with more than 4 orders",
+          name: topCity ? `${topCity} Loyalists` : "City Loyalists",
+          description: topCity
+            ? `Highly engaged customers in ${topCity} (your highest-volume city) with 5+ orders.`
+            : "Highly engaged customers in your highest-volume city with 5+ orders.",
+          naturalLanguage: topCity
+            ? `Customers in ${topCity} with more than 4 orders`
+            : "Customers with more than 4 orders",
           priority: "medium",
+          source: "starter",
         },
         {
-          name: "Single-Purchase Retention",
-          description: "New customers with exactly 1 order who registered in the last 30 days.",
+          name: "First-Purchase Conversion",
+          description: "New customers with exactly 1 order — target them before they churn.",
           naturalLanguage: "Customers with exactly 1 order who registered in the last 30 days",
           priority: "low",
+          source: "starter",
         },
       ];
     } else {
@@ -545,17 +557,45 @@ router.get("/analytics-narrative", async (req: Request, res: Response) => {
     let narrative = "";
 
     if (!creds) {
+      // No LLM key: build a strictly data-grounded narrative. Never name a "best"
+      // channel unless the computed stats actually support it.
       let totalSent = 0, totalDelivered = 0, whatsappSent = 0, whatsappDelivered = 0;
+      const sentByChannel: Record<string, number> = {};
       context.forEach(c => {
-        if (c.event === "sent") { totalSent += c.count; if (c.channel === "whatsapp") whatsappSent += c.count; }
-        if (c.event === "delivered") { totalDelivered += c.count; if (c.channel === "whatsapp") whatsappDelivered += c.count; }
+        if (c.event === "sent") {
+          totalSent += c.count;
+          sentByChannel[c.channel] = (sentByChannel[c.channel] || 0) + c.count;
+          if (c.channel === "whatsapp") whatsappSent += c.count;
+        }
+        if (c.event === "delivered") {
+          totalDelivered += c.count;
+          if (c.channel === "whatsapp") whatsappDelivered += c.count;
+        }
       });
-      if (totalSent > 0 && whatsappSent > 0) {
-        const overallRate = Math.round((totalDelivered / totalSent) * 100);
-        const waRate = Math.round((whatsappDelivered / whatsappSent) * 100);
-        narrative = `Overall delivery rate stands at ${overallRate}%. WhatsApp is the most active channel with ${waRate}% delivery efficiency. Consider shifting re-engagement campaigns from SMS to WhatsApp for richer tracking.`;
+
+      if (totalSent === 0) {
+        narrative = "No sent messages found in the data yet. Launch a campaign to start tracking delivery performance.";
       } else {
-        narrative = "Overall delivery rate across channels is healthy. WhatsApp is the most active channel. Consider shifting re-engagement campaigns from SMS to WhatsApp for richer tracking.";
+        const overallRate = Math.round((totalDelivered / totalSent) * 100);
+        // Determine the highest-volume channel from the real data.
+        let topChannel = "";
+        let topVol = 0;
+        for (const [ch, vol] of Object.entries(sentByChannel)) {
+          if (vol > topVol) { topVol = vol; topChannel = ch; }
+        }
+        const whatsappIsTop = topChannel === "whatsapp" && whatsappSent > 0;
+
+        if (whatsappIsTop) {
+          // Only claim WhatsApp is the most active channel when it truly leads by volume.
+          const waRate = Math.round((whatsappDelivered / whatsappSent) * 100);
+          narrative = `Overall delivery rate stands at ${overallRate}% across ${campaignCount} campaign${campaignCount !== 1 ? "s" : ""}. WhatsApp is the most active channel by volume with ${waRate}% delivery efficiency. Because SMS cannot track opens or clicks, WhatsApp offers richer engagement tracking for re-engagement campaigns.`;
+        } else {
+          // WhatsApp is not the leader — report the overall rate and the real top channel factually, without naming a "best".
+          const channelClause = topChannel
+            ? ` ${topChannel.charAt(0).toUpperCase() + topChannel.slice(1)} accounts for the highest message volume.`
+            : "";
+          narrative = `Overall delivery rate stands at ${overallRate}% across ${campaignCount} campaign${campaignCount !== 1 ? "s" : ""}.${channelClause} Review the Analytics page for a full channel breakdown.`;
+        }
       }
       return res.json({ narrative, generatedAt: new Date().toISOString() });
     } else {
