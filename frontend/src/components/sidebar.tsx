@@ -12,6 +12,7 @@ import {
   BarChart3,
 } from "lucide-react";
 import { AISettingsButton } from "./AISettings";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -22,27 +23,50 @@ const NAV = [
   { href: "/agent", label: "AI Agent", icon: Bot },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  mobileOpen?: boolean;
+  onClose?: () => void;
+  /** Optional slot rendered in the header (e.g. a mobile close button). */
+  children?: React.ReactNode;
+}
+
+export function Sidebar({ mobileOpen, onClose, children }: SidebarProps) {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 w-56 border-r border-zinc-800 bg-zinc-950 flex flex-col">
-      <div className="flex h-14 items-center px-5 border-b border-zinc-800">
-        <span className="text-lg font-semibold text-white tracking-tight">Xeno</span>
-        <span className="ml-1.5 text-xs text-zinc-500 font-medium">CRM</span>
+    <aside
+      className={clsx(
+        "fixed inset-y-0 left-0 z-50 w-56 border-r border-border bg-background flex flex-col",
+        "transition-transform duration-300 ease-in-out",
+        // Drawer behaviour on mobile, always visible on desktop
+        "md:translate-x-0",
+        mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+      )}
+    >
+      <div className="flex h-14 items-center justify-between px-5 border-b border-border">
+        <div className="flex items-center">
+          <span className="text-lg font-semibold tracking-tight">Xeno</span>
+          <span className="ml-1.5 text-xs text-muted-foreground font-medium">
+            CRM
+          </span>
+        </div>
+        {children}
       </div>
-      <nav className="flex-1 px-3 py-4 space-y-1">
+
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-thin">
         {NAV.map(({ href, label, icon: Icon }) => {
-          const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+          const active =
+            href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
             <Link
               key={href}
               href={href}
+              onClick={onClose}
               className={clsx(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 active
-                  ? "bg-zinc-800 text-white"
-                  : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
               )}
             >
               <Icon className="h-4 w-4" />
@@ -51,9 +75,16 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <div className="px-4 py-4 border-t border-zinc-800 flex items-center justify-between">
-        <p className="text-xs text-zinc-600">AI-Native CRM</p>
-        <AISettingsButton />
+
+      <div className="px-4 py-4 border-t border-border space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">AI-Native CRM</p>
+          <AISettingsButton />
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">Theme</span>
+          <ThemeToggle />
+        </div>
       </div>
     </aside>
   );

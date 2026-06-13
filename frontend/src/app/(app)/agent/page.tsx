@@ -321,8 +321,8 @@ function AgentContent() {
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <Bot className="h-12 w-12 text-zinc-700 mb-4" />
-            <p className="text-zinc-400 text-lg">What would you like to do?</p>
-            <p className="text-zinc-600 text-sm mt-2 max-w-md">
+            <p className="text-muted-foreground text-lg">What would you like to do?</p>
+            <p className="text-muted-foreground text-sm mt-2 max-w-md">
               Try: "Create a segment of customers in Mumbai who spent over 5000" or
               "Launch an SMS campaign to re-engage inactive users"
             </p>
@@ -340,14 +340,14 @@ function AgentContent() {
         ))}
 
         {streaming && (
-          <div className="flex items-center gap-2 text-zinc-500 text-sm px-4">
+          <div className="flex items-center gap-2 text-muted-foreground text-sm px-4">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             Thinking...
           </div>
         )}
       </div>
 
-      <div className="border-t border-zinc-800 pt-4">
+      <div className="border-t border-border pt-4">
         <div className="flex items-center gap-3">
           <input
             ref={inputRef}
@@ -357,7 +357,7 @@ function AgentContent() {
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
             placeholder={awaitingConfirmation ? "Approve or reject the action above..." : "Describe what you want to do..."}
             disabled={streaming || awaitingConfirmation}
-            className="flex-1 px-4 py-3 rounded-xl bg-zinc-900 border border-zinc-800 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 disabled:opacity-50"
+            className="flex-1 px-4 py-3 rounded-xl bg-card border border-border text-sm text-zinc-200 placeholder:text-muted-foreground focus:outline-none focus:border-zinc-600 disabled:opacity-50"
           />
           <button
             onClick={sendMessage}
@@ -390,7 +390,7 @@ function MessageBubble({
           {message.content}
         </div>
         <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center flex-shrink-0">
-          <User className="h-4 w-4 text-zinc-400" />
+          <User className="h-4 w-4 text-muted-foreground" />
         </div>
       </div>
     );
@@ -400,10 +400,10 @@ function MessageBubble({
     return (
       <div className="ml-11 my-2">
         {message.toolUse && (
-          <div className="flex items-center gap-2 text-xs text-zinc-500 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-card/50 border border-border rounded-lg px-3 py-2">
             <Wrench className="h-3.5 w-3.5 text-amber-400" />
             <span className="font-medium text-zinc-300">{message.toolUse.name}</span>
-            <span className="text-zinc-600">
+            <span className="text-muted-foreground">
               {JSON.stringify(message.toolUse.input).slice(0, 100)}
               {JSON.stringify(message.toolUse.input).length > 100 ? "..." : ""}
             </span>
@@ -429,7 +429,7 @@ function MessageBubble({
               ? "Launch this campaign to the selected segment?"
               : `Run "${message.confirmationData.toolName}"?`}
           </p>
-          <pre className="text-xs text-zinc-400 bg-zinc-950 rounded p-2 mb-3 overflow-x-auto">
+          <pre className="text-xs text-muted-foreground bg-background rounded p-2 mb-3 overflow-x-auto">
             {JSON.stringify(message.confirmationData.input, null, 2)}
           </pre>
           {awaitingConfirmation && (
@@ -462,7 +462,7 @@ function MessageBubble({
       <div className="w-8 h-8 rounded-full bg-violet-900/30 flex items-center justify-center flex-shrink-0">
         <Bot className="h-4 w-4 text-violet-400" />
       </div>
-      <div className="max-w-[70%] rounded-xl bg-zinc-900 border border-zinc-800 px-4 py-3 text-sm text-zinc-200 whitespace-pre-wrap">
+      <div className="max-w-[70%] rounded-xl bg-card border border-border px-4 py-3 text-sm text-zinc-200 whitespace-pre-wrap">
         {message.content}
       </div>
     </div>
@@ -485,17 +485,17 @@ function ToolResultDisplay({ name, output }: { name: string; output: any }) {
   }
 
   return (
-    <div className="mt-1 text-xs border border-zinc-800 rounded-lg overflow-hidden">
+    <div className="mt-1 text-xs border border-border rounded-lg overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 bg-zinc-900/30 hover:bg-zinc-900/60 transition-colors text-left"
+        className="w-full flex items-center gap-2 px-3 py-2 bg-card/30 hover:bg-card/60 transition-colors text-left"
       >
         <CheckCircle className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0" />
         <span className="text-zinc-300 font-medium">{name}</span>
-        {summary && <span className="text-zinc-500 truncate ml-1">— {summary}</span>}
+        {summary && <span className="text-muted-foreground truncate ml-1">— {summary}</span>}
       </button>
       {expanded && (
-        <pre className="px-3 py-2 text-zinc-400 overflow-x-auto max-h-48 overflow-y-auto bg-zinc-950 border-t border-zinc-800">
+        <pre className="px-3 py-2 text-muted-foreground overflow-x-auto max-h-48 overflow-y-auto bg-background border-t border-border">
           {JSON.stringify(data, null, 2)}
         </pre>
       )}

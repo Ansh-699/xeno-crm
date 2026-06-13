@@ -155,35 +155,35 @@ export default function CustomersPage() {
     switch (health) {
       case "loyal":
         return (
-          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/30">
-            <Heart className="h-3 w-3 fill-emerald-400" />
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+            <Heart className="h-3 w-3 fill-current" />
             Loyal
           </span>
         );
       case "at_risk":
         return (
-          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-amber-950/40 text-amber-400 border border-amber-800/30 animate-pulse">
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 animate-pulse">
             <ShieldAlert className="h-3 w-3" />
             At Risk
           </span>
         );
       case "churning":
         return (
-          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-red-950/40 text-red-400 border border-red-800/30">
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20">
             <ShieldAlert className="h-3 w-3" />
             Churning
           </span>
         );
       case "new":
         return (
-          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-blue-950/40 text-blue-400 border border-blue-800/30">
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
             <Sparkles className="h-3 w-3" />
             New
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-zinc-800/50 text-zinc-300 border border-zinc-700/30">
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-600 dark:text-zinc-400 border border-zinc-500/20">
             <UserCheck className="h-3 w-3" />
             Regular
           </span>
@@ -205,27 +205,27 @@ export default function CustomersPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Customers</h1>
-          <p className="text-xs text-zinc-500 mt-1">AI-calculated health status based on purchase frequency and recency</p>
+          <h1 className="text-3xl font-bold tracking-tight">Customers</h1>
+          <p className="text-sm text-muted-foreground mt-1">AI-calculated health status based on purchase frequency and recency</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
               placeholder="Search..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearch(search)}
-              className="pl-9 pr-8 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 w-64"
+              className="pl-9 pr-8 py-2 rounded-lg bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-700 w-64"
             />
             {search && (
               <button onClick={() => { setSearch(""); handleSearch(""); }} className="absolute right-2 top-1/2 -translate-y-1/2">
-                <X className="h-3.5 w-3.5 text-zinc-500" />
+                <X className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
             )}
           </div>
-          <label className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800 text-sm font-medium cursor-pointer hover:bg-zinc-700 transition-colors">
+          <label className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 text-sm font-bold uppercase tracking-wider cursor-pointer hover:opacity-90 transition-all shadow-sm">
             <Upload className="h-4 w-4" />
             {importing ? "Importing..." : "Import CSV"}
             <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleCSVUpload} />
@@ -235,48 +235,48 @@ export default function CustomersPage() {
 
       {/* KPI Cards */}
       {summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Users className="h-4 w-4 text-zinc-400" />
-              <span className="text-xs text-zinc-500">Total Customers</span>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total Customers</span>
             </div>
-            <p className="text-xl font-bold text-white">{summary.total.toLocaleString()}</p>
+            <p className="text-2xl font-bold tracking-tight">{summary.total.toLocaleString()}</p>
           </div>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <IndianRupee className="h-4 w-4 text-emerald-400" />
-              <span className="text-xs text-zinc-500">Total LTV</span>
+          <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <IndianRupee className="h-4 w-4 text-emerald-500" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total LTV</span>
             </div>
-            <p className="text-xl font-bold text-emerald-400">₹{summary.totalLTV.toLocaleString()}</p>
+            <p className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">₹{summary.totalLTV.toLocaleString()}</p>
           </div>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Heart className="h-4 w-4 text-emerald-400 fill-emerald-400" />
-              <span className="text-xs text-zinc-500">Loyal</span>
+          <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <Heart className="h-4 w-4 text-emerald-500 fill-current" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Loyal</span>
             </div>
-            <p className="text-xl font-bold text-white">{summary.counts.loyal.toLocaleString()}</p>
+            <p className="text-2xl font-bold tracking-tight">{summary.counts.loyal.toLocaleString()}</p>
           </div>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <ShieldAlert className="h-4 w-4 text-amber-400" />
-              <span className="text-xs text-zinc-500">At Risk</span>
+          <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <ShieldAlert className="h-4 w-4 text-amber-500" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">At Risk</span>
             </div>
-            <p className="text-xl font-bold text-white">{summary.counts.at_risk.toLocaleString()}</p>
+            <p className="text-2xl font-bold tracking-tight">{summary.counts.at_risk.toLocaleString()}</p>
           </div>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <ShieldAlert className="h-4 w-4 text-red-400" />
-              <span className="text-xs text-zinc-500">Churning</span>
+          <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <ShieldAlert className="h-4 w-4 text-red-500" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Churning</span>
             </div>
-            <p className="text-xl font-bold text-white">{summary.counts.churning.toLocaleString()}</p>
+            <p className="text-2xl font-bold tracking-tight">{summary.counts.churning.toLocaleString()}</p>
           </div>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <UserX className="h-4 w-4 text-zinc-400" />
-              <span className="text-xs text-zinc-500">Opted-Out %</span>
+          <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <UserX className="h-4 w-4 text-muted-foreground" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Opted-Out</span>
             </div>
-            <p className="text-xl font-bold text-white">
+            <p className="text-2xl font-bold tracking-tight">
               {summary.total > 0 ? ((summary.optedOutCount / summary.total) * 100).toFixed(1) : "0.0"}%
             </p>
           </div>
@@ -284,7 +284,7 @@ export default function CustomersPage() {
       )}
 
       {loading ? (
-        <div className="text-zinc-500 text-sm">Loading customers & calculating stats...</div>
+        <div className="text-muted-foreground text-sm">Loading customers & calculating stats...</div>
       ) : (
         <>
           {/* Health filter pills + total count */}
@@ -297,14 +297,14 @@ export default function CustomersPage() {
                   className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                     healthFilter === p.key
                       ? "bg-zinc-700 text-white"
-                      : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:border-zinc-700"
+                      : "bg-card text-muted-foreground border border-border hover:border-zinc-700"
                   }`}
                 >
                   {p.label}
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-4 text-xs text-zinc-500">
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
               <span>{total.toLocaleString()} customers total</span>
               <span className="flex items-center gap-1"><Heart className="h-3 w-3 text-emerald-400 fill-emerald-400" /> Loyal (5+ orders)</span>
               <span className="flex items-center gap-1"><ShieldAlert className="h-3 w-3 text-amber-400" /> At Risk</span>
@@ -312,54 +312,54 @@ export default function CustomersPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-zinc-800 overflow-hidden bg-zinc-950">
+          <div className="rounded-xl border border-border overflow-hidden bg-background">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-zinc-900 border-b border-zinc-800">
+                <thead className="bg-card border-b border-border">
                   <tr>
-                    <th className="text-left px-4 py-3 font-medium text-zinc-400">Name</th>
-                    <th className="text-left px-4 py-3 font-medium text-zinc-400">City</th>
-                    <th className="text-center px-4 py-3 font-medium text-zinc-400">AI Health</th>
-                    <th className="text-right px-4 py-3 font-medium text-zinc-400">Total Spend</th>
-                    <th className="text-center px-4 py-3 font-medium text-zinc-400">Orders</th>
-                    <th className="text-center px-4 py-3 font-medium text-zinc-400">Last Active</th>
-                    <th className="text-center px-4 py-3 font-medium text-zinc-400">Avg Gap</th>
-                    <th className="text-center px-4 py-3 font-medium text-zinc-400">Channel Status</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Name</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">City</th>
+                    <th className="text-center px-4 py-3 font-medium text-muted-foreground">AI Health</th>
+                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">Total Spend</th>
+                    <th className="text-center px-4 py-3 font-medium text-muted-foreground">Orders</th>
+                    <th className="text-center px-4 py-3 font-medium text-muted-foreground">Last Active</th>
+                    <th className="text-center px-4 py-3 font-medium text-muted-foreground">Avg Gap</th>
+                    <th className="text-center px-4 py-3 font-medium text-muted-foreground">Channel Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/40">
                   {customers.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-zinc-500">
+                      <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
                         No customers found. Import a CSV or use the AI Agent.
                       </td>
                     </tr>
                   ) : (
                     customers.map((c) => (
-                      <tr key={c.id} className="hover:bg-zinc-900/40 transition-colors">
+                      <tr key={c.id} className="hover:bg-card/40 transition-colors">
                         <td className="px-4 py-3 font-medium">
                           <div>
-                            <p className="text-white">{c.name}</p>
-                            <p className="flex items-center gap-1 text-xs text-zinc-500 font-mono mt-0.5">
+                            <p className="text-foreground">{c.name}</p>
+                            <p className="flex items-center gap-1 text-xs text-muted-foreground font-mono mt-0.5">
                               <Mail className="h-3 w-3 shrink-0" />
                               {c.email || <span className="text-zinc-700">—</span>}
                             </p>
-                            <p className="flex items-center gap-1 text-xs text-zinc-500 font-mono mt-0.5">
+                            <p className="flex items-center gap-1 text-xs text-muted-foreground font-mono mt-0.5">
                               <Phone className="h-3 w-3 shrink-0" />
                               {c.phone || <span className="text-zinc-700">—</span>}
                             </p>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-zinc-400">{c.city || "—"}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{c.city || "—"}</td>
                         <td className="px-4 py-3 text-center">{getHealthBadge(c.health)}</td>
                         <td className="px-4 py-3 text-right text-emerald-400 tabular-nums">
                           {c.totalSpent > 0 ? `₹${c.totalSpent.toLocaleString()}` : "—"}
                         </td>
                         <td className="px-4 py-3 text-center text-zinc-300 tabular-nums">{c.orderCount}</td>
-                        <td className="px-4 py-3 text-center text-zinc-400">
+                        <td className="px-4 py-3 text-center text-muted-foreground">
                           {c.daysSinceLastOrder !== null ? `${c.daysSinceLastOrder}d ago` : "Never"}
                         </td>
-                        <td className="px-4 py-3 text-center text-zinc-400 tabular-nums">
+                        <td className="px-4 py-3 text-center text-muted-foreground tabular-nums">
                           {c.avgOrderGapDays !== null ? `${c.avgOrderGapDays}d` : "—"}
                         </td>
                         <td className="px-4 py-3 text-center">

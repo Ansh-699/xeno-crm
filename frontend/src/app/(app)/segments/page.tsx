@@ -27,7 +27,7 @@ interface SuggestedSegment {
 
 /** Recursive renderer for the filter DSL tree. Handles nested AND/OR groups. */
 function FilterConditions({ node }: { node: any }) {
-  if (!node) return <span className="text-xs text-zinc-600">No conditions</span>;
+  if (!node) return <span className="text-xs text-muted-foreground">No conditions</span>;
 
   // Leaf condition: has a field property
   if (node.field) {
@@ -45,7 +45,7 @@ function FilterConditions({ node }: { node: any }) {
   if (node.operator && Array.isArray(node.conditions)) {
     return (
       <>
-        <span className="text-xs px-2 py-1 rounded bg-zinc-900 text-zinc-500 border border-zinc-700">
+        <span className="text-xs px-2 py-1 rounded bg-card text-muted-foreground border border-zinc-700">
           {node.operator}
         </span>
         {node.conditions.map((c: any, i: number) => (
@@ -63,35 +63,35 @@ function HealthPill({ health }: { health: string }) {
   switch (health) {
     case "loyal":
       return (
-        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/30">
-          <Heart className="h-2.5 w-2.5 fill-emerald-400" />
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+          <Heart className="h-2.5 w-2.5 fill-current" />
           Loyal
         </span>
       );
     case "at_risk":
       return (
-        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-950/40 text-amber-400 border border-amber-800/30">
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
           <ShieldAlert className="h-2.5 w-2.5" />
           At Risk
         </span>
       );
     case "churning":
       return (
-        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-red-950/40 text-red-400 border border-red-800/30">
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20">
           <ShieldAlert className="h-2.5 w-2.5" />
           Churning
         </span>
       );
     case "new":
       return (
-        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-blue-950/40 text-blue-400 border border-blue-800/30">
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
           <Sparkles className="h-2.5 w-2.5" />
           New
         </span>
       );
     default:
       return (
-        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-zinc-800/50 text-zinc-300 border border-zinc-700/30">
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-zinc-500/10 text-zinc-600 dark:text-zinc-400 border border-zinc-500/20">
           <UserCheck className="h-2.5 w-2.5" />
           Regular
         </span>
@@ -284,63 +284,76 @@ export default function SegmentsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Segments</h1>
-          <p className="text-xs text-zinc-500 mt-1">Carve out target customer segments using natural language or AI suggestions</p>
+          <p className="text-xs text-muted-foreground mt-1">Carve out target customer segments using natural language or AI suggestions</p>
         </div>
       </div>
 
       {/* AI Segment Suggestions Card */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
-        <div className="flex items-center gap-2 mb-4">
-          <Sparkles className="h-5 w-5 text-violet-400" />
-          <h2 className="text-lg font-semibold text-white">Suggested High-Value Segments</h2>
-        </div>
-
-        {loadingSuggestions ? (
-          <div className="text-zinc-500 text-sm py-2">Analyzing database patterns to suggest high-impact targets...</div>
-        ) : suggestions.length === 0 ? (
-          <p className="text-sm text-zinc-500">No suggestions available.</p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {suggestions.map((s, idx) => (
-              <div key={idx} className="rounded-lg border border-zinc-800 bg-zinc-950 p-4 flex flex-col justify-between hover:border-zinc-700 transition-colors">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] uppercase font-bold text-violet-400">AI Suggested</span>
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${
-                      s.priority === "high" ? "bg-red-900/20 text-red-400" : "bg-zinc-800 text-zinc-400"
-                    }`}>
-                      {s.priority} priority
-                    </span>
-                  </div>
-                  <h3 className="font-semibold text-sm text-white mb-1">{s.name}</h3>
-                  <p className="text-xs text-zinc-400 leading-relaxed mb-4">{s.description}</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setNlInput(s.naturalLanguage);
-                    handleNlCreate(s.naturalLanguage);
-                  }}
-                  disabled={creating}
-                  className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md bg-zinc-900 text-xs text-zinc-300 font-medium hover:bg-zinc-800 hover:text-white border border-zinc-800 disabled:opacity-50 transition-colors"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Instantiate Segment
-                </button>
-              </div>
-            ))}
+      <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden relative group">
+        <div className="absolute inset-0 bg-gradient-to-br from-violet-500/[0.02] to-transparent pointer-events-none" />
+        <div className="p-8">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-500">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold tracking-tight text-foreground">Suggested Targets</h2>
+              <p className="text-sm text-muted-foreground">High-value segments automatically identified from your database.</p>
+            </div>
           </div>
-        )}
+
+          {loadingSuggestions ? (
+            <div className="flex items-center gap-3 text-muted-foreground text-sm py-4">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Analyzing database patterns...
+            </div>
+          ) : suggestions.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">No suggestions available at the moment.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {suggestions.map((s, idx) => (
+                <div key={idx} className="rounded-xl border border-border bg-background p-6 flex flex-col justify-between hover:shadow-md transition-all group/card">
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-violet-500">AI Suggested</span>
+                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                        s.priority === "high" ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-zinc-100 dark:bg-zinc-800 text-muted-foreground"
+                      }`}>
+                        {s.priority}
+                      </span>
+                    </div>
+                    <h3 className="font-bold text-base text-foreground mb-2 tracking-tight">{s.name}</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed mb-6">{s.description}</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setNlInput(s.naturalLanguage);
+                      handleNlCreate(s.naturalLanguage);
+                    }}
+                    disabled={creating}
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 text-xs font-bold uppercase tracking-wider hover:opacity-90 disabled:opacity-50 transition-all shadow-sm"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Instantiate
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Natural Language Segment Builder */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
-        <div className="flex items-center gap-2 mb-3">
-          <Sparkles className="h-4 w-4 text-violet-400" />
-          <span className="text-sm font-medium text-white">Create Custom Segment with AI</span>
+      <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-2 rounded-lg bg-violet-500/10 text-violet-500">
+            <Sparkles className="h-4 w-4" />
+          </div>
+          <div>
+            <span className="text-sm font-bold tracking-tight">Custom AI Builder</span>
+            <p className="text-xs text-muted-foreground mt-0.5">Define complex segments using plain English.</p>
+          </div>
         </div>
-        <p className="text-xs text-zinc-500 mb-3">
-          Describe who you want to reach in plain English. The AI parses the filter parameters and generates the segment instantly.
-        </p>
         <div className="flex items-center gap-3">
           <input
             type="text"
@@ -349,40 +362,40 @@ export default function SegmentsPage() {
             onKeyDown={(e) => e.key === "Enter" && handleNlCreate()}
             placeholder='e.g. "Customers in Delhi who have not ordered in the last 2 months"'
             disabled={creating}
-            className="flex-1 px-4 py-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-700 disabled:opacity-50"
+            className="flex-1 px-4 py-3 rounded-xl bg-background border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-700 disabled:opacity-50 transition-all"
           />
           <button
             onClick={() => handleNlCreate()}
             disabled={!nlInput.trim() || creating}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-violet-600 text-white text-sm font-bold uppercase tracking-wider hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm"
           >
             {creating ? (
               <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Processing...
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Building...
               </>
             ) : (
               <>
-                <Sparkles className="h-3.5 w-3.5" />
+                <Sparkles className="h-4 w-4" />
                 Build
               </>
             )}
           </button>
         </div>
         {createStatus && (
-          <p className={`text-xs mt-2 ${createStatus.startsWith("✅") ? "text-emerald-400" : "text-zinc-400"}`}>
-            {creating && <Loader2 className="inline h-3 w-3 animate-spin mr-1" />}
+          <p className={`text-[10px] font-bold uppercase tracking-widest mt-4 ${createStatus.startsWith("✅") ? "text-emerald-500" : "text-muted-foreground"}`}>
+            {creating && <Loader2 className="inline h-3 w-3 animate-spin mr-2" />}
             {createStatus}
           </p>
         )}
         {createError && (
-          <div className="mt-3 p-3 rounded-lg bg-red-950/30 border border-red-900/40 flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
+          <div className="mt-4 p-4 rounded-xl bg-red-500/5 border border-red-500/10 flex items-start gap-3">
+            <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
             <div>
-              <p className="text-xs text-red-300">{createError}</p>
+              <p className="text-xs text-red-600 dark:text-red-400 font-medium leading-relaxed">{createError}</p>
               <button
                 onClick={() => setCreateError(null)}
-                className="text-[10px] text-red-500 hover:text-red-400 mt-1 underline"
+                className="text-[10px] font-bold uppercase tracking-widest text-red-500 hover:opacity-80 mt-2"
               >
                 Dismiss
               </button>
@@ -395,19 +408,19 @@ export default function SegmentsPage() {
       <div>
         <h2 className="text-lg font-semibold mb-4">All Segments</h2>
         {loading ? (
-          <div className="text-zinc-500">Loading segments...</div>
+          <div className="text-muted-foreground">Loading segments...</div>
         ) : segments.length === 0 ? (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-8 text-center">
-            <Target className="h-8 w-8 text-zinc-600 mx-auto mb-3" />
-            <p className="text-zinc-400">No segments yet</p>
-            <p className="text-sm text-zinc-600 mt-1">
+          <div className="rounded-xl border border-border bg-card p-8 text-center">
+            <Target className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
+            <p className="text-muted-foreground">No segments yet</p>
+            <p className="text-sm text-muted-foreground mt-1">
               Use the AI suggestions above or custom builder to instantiate a segment.
             </p>
           </div>
         ) : (
           <div className="space-y-4">
             {segments.map((seg) => (
-                <div key={seg.id} className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
+                <div key={seg.id} className="rounded-xl border border-border bg-card p-5 shadow-sm">
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="flex items-center gap-2">
@@ -417,9 +430,9 @@ export default function SegmentsPage() {
                         )}
                       </div>
                       {seg.description && (
-                        <p className="text-sm text-zinc-400 mt-1">{seg.description}</p>
+                        <p className="text-sm text-muted-foreground mt-1">{seg.description}</p>
                       )}
-                      <div className="flex items-center gap-4 mt-3 text-xs text-zinc-500">
+                      <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <Users className="h-3.5 w-3.5" />
                           {seg.customerCount.toLocaleString()} customers
@@ -449,7 +462,7 @@ export default function SegmentsPage() {
 
                   {/* Value strip: revenue + health bar + reachability */}
                   {(seg.segmentRevenue !== undefined || seg.healthBreakdown || seg.reachable) && (
-                    <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-zinc-400">
+                    <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
                       {seg.segmentRevenue !== undefined && (
                         <span className="flex items-center gap-1 text-emerald-400">
                           <IndianRupee className="h-3 w-3" />
@@ -471,7 +484,7 @@ export default function SegmentsPage() {
                         );
                       })()}
                       {seg.reachable && (
-                        <span className="flex items-center gap-2 text-zinc-500">
+                        <span className="flex items-center gap-2 text-muted-foreground">
                           <span>📧 {seg.reachable.emailable}</span>
                           <span>📱 {seg.reachable.textable}</span>
                         </span>
@@ -480,11 +493,11 @@ export default function SegmentsPage() {
                   )}
 
                   {/* Filter DSL display */}
-                  <div className="mt-3 p-3 rounded-lg bg-zinc-950 border border-zinc-800">
-                    <p className="text-xs text-zinc-500 mb-1">Filter Conditions</p>
+                  <div className="mt-3 p-3 rounded-lg bg-background border border-border">
+                    <p className="text-xs text-muted-foreground mb-1">Filter Conditions</p>
                     {/* Plain-English filter summary */}
                     {seg.filters && (
-                      <p className="text-xs text-zinc-400 italic mb-2">{filterSummary(seg.filters)}</p>
+                      <p className="text-xs text-muted-foreground italic mb-2">{filterSummary(seg.filters)}</p>
                     )}
                     <div className="flex flex-wrap gap-2">
                       <FilterConditions node={seg.filters} />
@@ -493,18 +506,18 @@ export default function SegmentsPage() {
 
                   {/* Preview panel */}
                   {preview?.id === seg.id && (
-                    <div className="mt-4 border-t border-zinc-800 pt-4">
-                      <p className="text-xs text-zinc-500 mb-2">
+                    <div className="mt-4 border-t border-border pt-4">
+                      <p className="text-xs text-muted-foreground mb-2">
                         Showing {preview.customers.length} of {preview.total} customers
                       </p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {preview.customers.map((c: any) => (
-                          <div key={c.id} className="text-xs p-2 rounded bg-zinc-950 border border-zinc-800">
+                          <div key={c.id} className="text-xs p-2 rounded bg-background border border-border">
                             <div className="flex items-center justify-between mb-1">
-                              <span className="font-medium text-white">{c.name}</span>
+                              <span className="font-medium text-foreground">{c.name}</span>
                               {c.health && <HealthPill health={c.health} />}
                             </div>
-                            <div className="flex items-center gap-2 text-zinc-500">
+                            <div className="flex items-center gap-2 text-muted-foreground">
                               <span>{c.city || "—"}</span>
                               {c.totalSpent > 0 && (
                                 <span className="text-emerald-400">₹{c.totalSpent.toLocaleString()}</span>

@@ -112,7 +112,7 @@ export default function AnalyticsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="flex items-center gap-3 text-zinc-500">
+        <div className="flex items-center gap-3 text-muted-foreground">
           <div className="h-4 w-4 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
           Loading analytics...
         </div>
@@ -122,9 +122,9 @@ export default function AnalyticsPage() {
 
   if (!data) {
     return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-12 text-center">
+      <div className="rounded-xl border border-border bg-card p-12 text-center">
         <BarChart3 className="h-10 w-10 text-zinc-700 mx-auto mb-3" />
-        <p className="text-zinc-400">Unable to load analytics data</p>
+        <p className="text-muted-foreground">Unable to load analytics data</p>
       </div>
     );
   }
@@ -136,26 +136,26 @@ export default function AnalyticsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Analytics</h1>
-          <p className="text-xs text-zinc-500 mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             Cross-campaign performance dashboards and channel efficiency
           </p>
         </div>
       </div>
 
       {/* AI Narrative Performance Summary Card */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 shadow-sm relative overflow-hidden">
+      <div className="rounded-xl border border-border bg-card p-5 shadow-sm relative overflow-hidden">
         <div className="absolute top-0 right-0 p-4 opacity-5">
           <Sparkles className="h-32 w-32 text-violet-400" />
         </div>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-violet-400 animate-pulse" />
-            <h2 className="text-sm font-semibold text-white">AI-Generated Executive Briefing</h2>
+            <h2 className="text-sm font-semibold text-foreground">AI-Generated Executive Briefing</h2>
           </div>
           <button
             onClick={loadNarrative}
             disabled={loadingNarrative}
-            className="p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-400 transition-colors"
+            className="p-1 rounded hover:bg-zinc-800 text-muted-foreground hover:text-muted-foreground transition-colors"
           >
             {loadingNarrative ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -166,9 +166,9 @@ export default function AnalyticsPage() {
         </div>
 
         {loadingNarrative ? (
-          <div className="text-xs text-zinc-500 py-1">Synthesizing delivery rates and click patterns...</div>
+          <div className="text-xs text-muted-foreground py-1">Synthesizing delivery rates and click patterns...</div>
         ) : (
-          <p className="text-xs text-zinc-400 leading-relaxed font-medium">
+          <p className="text-xs text-muted-foreground leading-relaxed font-medium">
             {narrative}
           </p>
         )}
@@ -235,38 +235,38 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Channel Comparison — Asymmetric Metrics */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
+      <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
           <BarChart3 className="h-5 w-5 text-violet-400" />
-          <h2 className="text-lg font-semibold text-white">Channel Performance Matrix</h2>
+          <h2 className="text-lg font-semibold text-foreground">Channel Performance Matrix</h2>
         </div>
-        <p className="text-xs text-zinc-500 mb-4">
+        <p className="text-xs text-muted-foreground mb-4">
           SMS is an asymmetric channel. It only supports delivery tracking, and engagement metrics (opened, read,
           clicked) are not available.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-800">
-                <th className="text-left py-3 px-4 font-medium text-zinc-400">
+              <tr className="border-b border-border">
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground">
                   Channel
                 </th>
-                <th className="text-right py-3 px-4 font-medium text-zinc-400">
+                <th className="text-right py-3 px-4 font-medium text-muted-foreground">
                   Sent
                 </th>
-                <th className="text-right py-3 px-4 font-medium text-zinc-400">
+                <th className="text-right py-3 px-4 font-medium text-muted-foreground">
                   Delivered
                 </th>
-                <th className="text-right py-3 px-4 font-medium text-zinc-400">
+                <th className="text-right py-3 px-4 font-medium text-muted-foreground">
                   Delivery Rate
                 </th>
-                <th className="text-right py-3 px-4 font-medium text-zinc-400">
+                <th className="text-right py-3 px-4 font-medium text-muted-foreground">
                   Failed
                 </th>
-                <th className="text-right py-3 px-4 font-medium text-zinc-400">
+                <th className="text-right py-3 px-4 font-medium text-muted-foreground">
                   Opened / Read
                 </th>
-                <th className="text-right py-3 px-4 font-medium text-zinc-400">
+                <th className="text-right py-3 px-4 font-medium text-muted-foreground">
                   Clicked
                 </th>
               </tr>
@@ -288,7 +288,7 @@ export default function AnalyticsPage() {
                 return (
                   <tr
                     key={ch}
-                    className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors"
+                    className="border-b border-border/50 hover:bg-zinc-800/30 transition-colors"
                   >
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
@@ -310,7 +310,7 @@ export default function AnalyticsPage() {
                     </td>
                     <td className="text-right py-3 px-4 tabular-nums">
                       {isSms ? (
-                        <span className="text-zinc-600 text-xs">N/A</span>
+                        <span className="text-muted-foreground text-xs">N/A</span>
                       ) : (
                         <span className="text-amber-400">
                           {(opened + read).toLocaleString()}
@@ -319,7 +319,7 @@ export default function AnalyticsPage() {
                     </td>
                     <td className="text-right py-3 px-4 tabular-nums">
                       {isSms ? (
-                        <span className="text-zinc-600 text-xs">N/A</span>
+                        <span className="text-muted-foreground text-xs">N/A</span>
                       ) : (
                         <span className="text-cyan-400">
                           {clicked.toLocaleString()}
@@ -333,7 +333,7 @@ export default function AnalyticsPage() {
                 <tr>
                   <td
                     colSpan={7}
-                    className="py-8 text-center text-zinc-500 text-sm"
+                    className="py-8 text-center text-muted-foreground text-sm"
                   >
                     No channel data yet. Launch a campaign to see metrics.
                   </td>
@@ -345,17 +345,17 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Campaign History */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
+      <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
         <div className="flex items-center gap-2 mb-5">
           <Megaphone className="h-5 w-5 text-amber-400" />
-          <h2 className="text-lg font-semibold text-white">Campaign History</h2>
-          <span className="text-xs text-zinc-500 ml-2">
+          <h2 className="text-lg font-semibold text-foreground">Campaign History</h2>
+          <span className="text-xs text-muted-foreground ml-2">
             {campaigns.length} campaigns
           </span>
         </div>
 
         {campaigns.length === 0 ? (
-          <div className="py-8 text-center text-zinc-500">
+          <div className="py-8 text-center text-muted-foreground">
             <p>No campaigns yet</p>
           </div>
         ) : (
@@ -372,7 +372,7 @@ export default function AnalyticsPage() {
               return (
                 <div key={c.id}>
                   <div
-                    className="rounded-lg border border-zinc-800 bg-zinc-950 p-4 cursor-pointer hover:border-zinc-700 transition-all"
+                    className="rounded-lg border border-border bg-background p-4 cursor-pointer hover:border-zinc-700 transition-all"
                     onClick={() =>
                       setSelectedCampaign(
                         selectedCampaign === c.id ? null : c.id
@@ -383,8 +383,8 @@ export default function AnalyticsPage() {
                       <div className="flex items-center gap-3">
                         <StatusDot status={c.status} />
                         <div>
-                          <p className="font-medium text-sm text-white">{c.name}</p>
-                          <p className="text-xs text-zinc-500 mt-0.5">
+                          <p className="font-medium text-sm text-foreground">{c.name}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
                             {c.segmentName || "—"} ·{" "}
                             {new Date(c.createdAt).toLocaleDateString()}
                           </p>
@@ -420,7 +420,7 @@ export default function AnalyticsPage() {
                         />
                         <div className="text-right">
                           <RateBadge rate={c.deliveryRate} />
-                          <p className="text-[10px] text-zinc-600 mt-0.5">
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
                             delivery
                           </p>
                         </div>
@@ -430,14 +430,14 @@ export default function AnalyticsPage() {
                     {/* Channel distribution mini bar */}
                     {Object.keys(c.channels).length > 0 && (
                       <div className="mt-3 flex items-center gap-2">
-                        <span className="text-[10px] text-zinc-600">
+                        <span className="text-[10px] text-muted-foreground">
                           Channels:
                         </span>
                         <div className="flex gap-1.5">
                           {Object.entries(c.channels).map(([ch, count]) => (
                             <span
                               key={ch}
-                              className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400"
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-muted-foreground"
                             >
                               {ch}: {count}
                             </span>
@@ -449,10 +449,10 @@ export default function AnalyticsPage() {
 
                   {/* Expanded detail */}
                   {selectedCampaign === c.id && (
-                    <div className="mt-1 ml-4 rounded-lg border border-zinc-800 bg-zinc-950 p-4 space-y-4">
+                    <div className="mt-1 ml-4 rounded-lg border border-border bg-background p-4 space-y-4">
                       {/* Delivery progress */}
                       <div>
-                        <div className="flex justify-between text-xs text-zinc-500 mb-1">
+                        <div className="flex justify-between text-xs text-muted-foreground mb-1">
                           <span>Delivery Progress</span>
                           <span>{c.deliveryRate}%</span>
                         </div>
@@ -535,33 +535,33 @@ export default function AnalyticsPage() {
                             icon={ShoppingCart}
                             color="text-pink-400"
                           />
-                          <div className="rounded-lg bg-zinc-900 border border-zinc-800 p-3 text-center">
+                          <div className="rounded-lg bg-card border border-border p-3 text-center">
                             <IndianRupee className="h-3.5 w-3.5 mx-auto mb-1.5 text-lime-400" />
                             <p className="text-lg font-semibold tabular-nums text-lime-400">
                               ₹{c.attributedRevenue.toLocaleString()}
                             </p>
-                            <p className="text-[10px] text-zinc-500 mt-0.5">Attr. Revenue</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">Attr. Revenue</p>
                           </div>
-                          <div className="rounded-lg bg-zinc-900 border border-zinc-800 p-3 text-center">
+                          <div className="rounded-lg bg-card border border-border p-3 text-center">
                             <TrendingUp className="h-3.5 w-3.5 mx-auto mb-1.5 text-pink-400" />
                             <p className="text-lg font-semibold tabular-nums text-pink-400">
                               {c.conversionRate}%
                             </p>
-                            <p className="text-[10px] text-zinc-500 mt-0.5">Conv. Rate</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">Conv. Rate</p>
                           </div>
                         </div>
                       )}
 
                       {/* AI Brief */}
                       {c.aiBrief && (
-                        <div className="border-t border-zinc-800 pt-3">
+                        <div className="border-t border-border pt-3">
                           <div className="flex items-center gap-2 mb-2">
                             <BarChart3 className="h-3.5 w-3.5 text-violet-400" />
-                            <span className="text-xs font-medium text-zinc-400">
+                            <span className="text-xs font-medium text-muted-foreground">
                               AI Performance Brief
                             </span>
                           </div>
-                          <p className="text-xs text-zinc-400 whitespace-pre-wrap leading-relaxed">
+                          <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
                             {c.aiBrief}
                           </p>
                         </div>
@@ -594,14 +594,14 @@ function OverviewCard({
   bgColor: string;
 }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+    <div className="rounded-xl border border-border bg-card p-4">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-zinc-500">{label}</span>
+        <span className="text-xs text-muted-foreground">{label}</span>
         <div className={`p-1.5 rounded-lg ${bgColor}`}>
           <Icon className={`h-3.5 w-3.5 ${color}`} />
         </div>
       </div>
-      <p className="text-xl font-semibold tabular-nums text-white">{value}</p>
+      <p className="text-xl font-semibold tabular-nums text-foreground">{value}</p>
     </div>
   );
 }
@@ -681,7 +681,7 @@ function MiniStat({
   return (
     <div className="text-right">
       <p className={`text-sm font-semibold tabular-nums ${color}`}>{value}</p>
-      <p className="text-[10px] text-zinc-600">{label}</p>
+      <p className="text-[10px] text-muted-foreground">{label}</p>
     </div>
   );
 }
@@ -698,10 +698,10 @@ function DetailStat({
   color: string;
 }) {
   return (
-    <div className="rounded-lg bg-zinc-900 border border-zinc-800 p-3 text-center">
+    <div className="rounded-lg bg-card border border-border p-3 text-center">
       <Icon className={`h-3.5 w-3.5 mx-auto mb-1.5 ${color}`} />
       <p className={`text-lg font-semibold tabular-nums ${color}`}>{value}</p>
-      <p className="text-[10px] text-zinc-500 mt-0.5">{label}</p>
+      <p className="text-[10px] text-muted-foreground mt-0.5">{label}</p>
     </div>
   );
 }

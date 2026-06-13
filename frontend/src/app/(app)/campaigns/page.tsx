@@ -38,24 +38,24 @@ export default function CampaignsPage() {
     }
   }
 
-  if (loading) return <div className="text-zinc-500">Loading...</div>;
+  if (loading) return <div className="text-muted-foreground">Loading...</div>;
 
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">Campaigns</h1>
 
       {campaigns.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-8 text-center">
-          <Megaphone className="h-8 w-8 text-zinc-600 mx-auto mb-3" />
-          <p className="text-zinc-400">No campaigns launched yet</p>
-          <p className="text-sm text-zinc-600 mt-1">Use the AI Agent to create and launch campaigns</p>
+        <div className="rounded-xl border border-border bg-card p-8 text-center">
+          <Megaphone className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
+          <p className="text-muted-foreground">No campaigns launched yet</p>
+          <p className="text-sm text-muted-foreground mt-1">Use the AI Agent to create and launch campaigns</p>
         </div>
       ) : (
         <div className="space-y-4">
           {campaigns.map((c) => (
             <div key={c.id}>
               <div
-                className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 cursor-pointer hover:border-zinc-700 transition-colors"
+                className="rounded-xl border border-border bg-card p-5 cursor-pointer hover:border-zinc-700 transition-colors"
                 onClick={() => setSelectedId(selectedId === c.id ? null : c.id)}
               >
                 <div className="flex items-start justify-between">
@@ -64,12 +64,12 @@ export default function CampaignsPage() {
                       <h3 className="font-semibold">{c.name}</h3>
                       <StatusBadge status={c.status} />
                     </div>
-                    <p className="text-sm text-zinc-400 mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                       {c.segment?.name || "—"} · {c.channel || "multi"} · {c.totalRecipients || c._count.communications} recipients
                     </p>
-                    {c.goal && <p className="text-xs text-zinc-500 mt-1">{c.goal}</p>}
+                    {c.goal && <p className="text-xs text-muted-foreground mt-1">{c.goal}</p>}
                   </div>
-                  <div className="text-right text-xs text-zinc-500">
+                  <div className="text-right text-xs text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
                       {new Date(c.createdAt).toLocaleDateString()}
@@ -91,13 +91,13 @@ export default function CampaignsPage() {
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
-    completed: "bg-emerald-900/50 text-emerald-400",
-    sending: "bg-blue-900/50 text-blue-400",
-    queued: "bg-amber-900/50 text-amber-400",
-    failed: "bg-red-900/50 text-red-400",
+    completed: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+    sending: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
+    queued: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+    failed: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20",
   };
   return (
-    <span className={`text-xs px-2 py-0.5 rounded font-medium ${styles[status] || "bg-zinc-800 text-zinc-400"}`}>
+    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${styles[status] || "bg-zinc-100 dark:bg-zinc-800 text-muted-foreground border-transparent"}`}>
       {status}
     </span>
   );
@@ -270,40 +270,40 @@ function LiveStats({
   const deliveryRate = sent > 0 ? Math.round((delivered / sent) * 100) : 0;
 
   return (
-    <div className="mt-2 rounded-xl border border-zinc-800 bg-zinc-950 p-5 space-y-4">
+    <div className="mt-4 rounded-2xl border border-border bg-background p-6 space-y-6 shadow-inner">
       <div className="flex items-center gap-2">
-        <Radio className="h-4 w-4 text-emerald-400" />
-        <span className="text-sm font-medium">Live Delivery Stats</span>
+        <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+        <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Live Delivery Stats</span>
         {isSmsOnly && (
-          <span className="text-[10px] text-zinc-600 ml-auto bg-amber-950/20 text-amber-500 px-2 py-0.5 rounded border border-amber-900/30">
-            SMS — delivery tracking only
+          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-500 ml-auto px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20">
+            SMS Mode
           </span>
         )}
       </div>
 
       <div className={`grid gap-4 ${isSmsOnly ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4"}`}>
-        <StatCard label="Sent" value={sent} color="text-blue-400" />
-        <StatCard label="Delivered" value={delivered} color="text-emerald-400" />
-        <StatCard label="Failed" value={failed} color="text-red-400" />
+        <StatCard label="Sent" value={sent} color="text-blue-600 dark:text-blue-400" />
+        <StatCard label="Delivered" value={delivered} color="text-emerald-600 dark:text-emerald-400" />
+        <StatCard label="Failed" value={failed} color="text-red-600 dark:text-red-400" />
         {!isSmsOnly && (
-          <StatCard label="Opened" value={opened + read} color="text-amber-400" />
+          <StatCard label="Opened" value={opened + read} color="text-amber-600 dark:text-amber-400" />
         )}
       </div>
 
       {/* Progress bar */}
-      <div>
-        <div className="flex items-center justify-between text-xs text-zinc-500 mb-1">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground/80">
           <span>Delivery Progress</span>
-          <span>{deliveryRate}% delivered</span>
+          <span>{deliveryRate}%</span>
         </div>
-        <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
+        <div className="h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
           <div className="h-full flex">
             <div
-              className="bg-emerald-500 transition-all duration-500"
+              className="bg-emerald-500 transition-all duration-700 ease-out"
               style={{ width: `${(delivered / total) * 100}%` }}
             />
             <div
-              className="bg-red-500 transition-all duration-500"
+              className="bg-red-500 transition-all duration-700 ease-out"
               style={{ width: `${(failed / total) * 100}%` }}
             />
           </div>
@@ -311,27 +311,27 @@ function LiveStats({
       </div>
 
       {/* AI Brief and Recommendations Section */}
-      <div className="border-t border-zinc-800 pt-4 space-y-3">
+      <div className="border-t border-border pt-6 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <BarChart3 className="h-3.5 w-3.5 text-violet-400" />
-            <span className="text-xs font-medium text-zinc-400">AI Performance Brief & Narrative</span>
+            <Sparkles className="h-4 w-4 text-violet-500" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">AI Performance Brief</span>
           </div>
           {!aiBrief && (
             <button
               onClick={handleManualBrief}
               disabled={generatingBrief}
-              className="flex items-center gap-1 text-[10px] px-2 py-1 rounded bg-violet-600 text-white font-medium hover:bg-violet-500 disabled:opacity-50 transition-colors"
+              className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-50 transition-colors shadow-sm"
             >
               {generatingBrief ? (
                 <>
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  Generating...
+                  Analyzing...
                 </>
               ) : (
                 <>
                   <Sparkles className="h-3 w-3" />
-                  Generate Brief
+                  Generate
                 </>
               )}
             </button>
@@ -339,38 +339,40 @@ function LiveStats({
         </div>
 
         {aiBrief ? (
-          <p className="text-xs text-zinc-400 whitespace-pre-wrap leading-relaxed bg-zinc-900/40 p-3 rounded-lg border border-zinc-800/40">
+          <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed bg-zinc-50 dark:bg-zinc-900 p-5 rounded-xl border border-border/50">
             {aiBrief}
           </p>
         ) : (
-          <p className="text-xs text-zinc-600 italic">AI performance brief will auto-generate once campaign is complete.</p>
+          <div className="py-4 text-center">
+             <p className="text-xs text-muted-foreground italic">Insights will be ready once delivery completes.</p>
+          </div>
         )}
 
         {/* Proactive Next Steps */}
-        <div className="bg-violet-950/10 border border-violet-900/20 rounded-lg p-3 space-y-2">
+        <div className="bg-violet-500/[0.03] dark:bg-violet-500/[0.02] border border-violet-500/10 rounded-xl p-5 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] uppercase font-bold text-violet-400 flex items-center gap-1">
-              <Sparkles className="h-3 w-3" />
-              AI Recommendation
+            <span className="text-[10px] uppercase font-bold text-violet-600 dark:text-violet-400 flex items-center gap-2 tracking-widest">
+              <Sparkles className="h-3.5 w-3.5" />
+              Recommendation
             </span>
             {!nextStep && !loadingNextStep && (
               <button
                 onClick={handleGetNextSteps}
-                className="text-[10px] text-violet-400 hover:text-violet-300 font-medium inline-flex items-center gap-0.5"
+                className="text-[10px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400 hover:opacity-80 transition-opacity inline-flex items-center gap-1"
               >
-                Get Next Action Step
+                Get Action Step
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
           {loadingNextStep && (
-            <div className="text-xs text-zinc-500 flex items-center gap-1.5 py-1">
-              <Loader2 className="h-3 w-3 animate-spin text-violet-400" />
-              Formulating next steps based on campaign outcomes...
+            <div className="text-xs text-muted-foreground flex items-center gap-2 py-1">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-500" />
+              Synthesizing data...
             </div>
           )}
           {nextStep && (
-            <p className="text-xs text-zinc-300 leading-relaxed font-medium">
+            <p className="text-sm text-foreground/80 leading-relaxed font-medium">
               {nextStep}
             </p>
           )}
@@ -382,9 +384,9 @@ function LiveStats({
 
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
-    <div className="rounded-lg bg-zinc-900 border border-zinc-800 p-3 text-center">
-      <p className={`text-xl font-semibold ${color}`}>{value}</p>
-      <p className="text-xs text-zinc-500 mt-0.5">{label}</p>
+    <div className="rounded-xl bg-card border border-border p-4 text-center shadow-sm">
+      <p className={`text-2xl font-bold tracking-tight ${color}`}>{value.toLocaleString()}</p>
+      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-1">{label}</p>
     </div>
   );
 }
