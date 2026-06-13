@@ -1,53 +1,117 @@
-# Xeno CRM
+<p align="center">
+  <img src="frontend/public/banner.png" alt="Xeno CRM — AI-Native Mini CRM" width="800px" height="400px" />
+</p>
 
-An AI-native marketing/engagement **Mini CRM** for a consumer coffee brand ("Brewcraft
-Coffee") that reaches shoppers over WhatsApp, SMS, Email, and RCS. Marketers — or the
-built-in AI agent — ingest customers and orders, carve out behavioural segments in natural
+<h1 align="center">Xeno CRM</h1>
+
+<p align="center">
+  <em>An AI-native marketing &amp; engagement Mini CRM — ingest, segment, launch, attribute.</em>
+</p>
+
+<p align="center">
+  <a href="https://xeno.ansht.tech"><img src="https://img.shields.io/badge/live-xeno.ansht.tech-7c3aed?style=flat-square" alt="Live demo" /></a>
+  <img src="https://img.shields.io/badge/backend-Express%204%20%C2%B7%20TypeScript-3178c6?style=flat-square" alt="Backend" />
+  <img src="https://img.shields.io/badge/channel-Rust%20%C2%B7%20Axum-dea584?style=flat-square" alt="Channel service" />
+  <img src="https://img.shields.io/badge/frontend-Next.js%2015-000000?style=flat-square" alt="Frontend" />
+</p>
+
+---
+
+## Overview
+
+Xeno CRM is an AI-native marketing CRM for a consumer coffee brand (**"Brewcraft Coffee"**)
+that reaches shoppers over **WhatsApp, SMS, Email, and RCS**. Marketers — or the built-in
+**AI agent** — ingest customers and orders, carve out behavioural segments in natural
 language, and launch personalised campaigns through a **separate stubbed channel service**
-that simulates the real async delivery lifecycle and calls back with delivery/engagement
-receipts. Live funnel stats, attribution, and AI-written insights close the loop. The
-differentiator is the **AI Agent Tool Layer**: CRM operations are exposed as tools the LLM
-invokes dynamically, so the agent decides the workflow (segment → draft → recommend channels
-→ launch) from the marketer's intent, with a confirmation gate on irreversible sends.
+that simulates the real async delivery lifecycle and calls back with delivery / engagement
+receipts. Live funnel stats, revenue attribution, and AI-written insights close the loop.
+
+The differentiator is the **AI Agent Tool Layer**: CRM operations are exposed as tools the
+LLM invokes dynamically, so the agent decides the workflow — *segment → draft → recommend
+channels → launch* — from the marketer's intent, with a confirmation gate on irreversible
+sends.
+
+```
+ingest  →  AI segment  →  outbox  →  worker  →  Rust channel-service
+                                                        |
+                                                        │  (async callbacks)
+                                                        |
+insights  ←  attribution  ←  receipts  ←  ◀────────────┘
+```
 
 ## Architecture
 
-The backend is **Express 4 (TypeScript, run via `tsx`)** split into two processes — an API
-server and a standalone outbox poller worker. The channel service is **Rust / Axum**. The
-frontend is **Next.js 14**. PostgreSQL (via Prisma) is the system of record; Redis holds live
-campaign counters and the SSE pub/sub fan-out.
+Three runtimes, two managed datastores, BYOK LLM. The backend is **Express 4 (TypeScript via
+`tsx`)** split into two processes — an API server and a standalone outbox poller worker. The
+channel service is **Rust / Axum**. The frontend is **Next.js 15**. PostgreSQL (via Prisma)
+is the system of record; Redis holds live campaign counters and the SSE pub/sub fan-out.
 
 ```mermaid
-flowchart LR
-  FE[Next.js 14 Frontend<br/>:3000]
-
-  subgraph Backend[Backend — Express 4 / tsx]
-    API[API Server<br/>src/index.ts · :3001]
-    WORK[Outbox Poller Worker<br/>src/worker/poller.ts]
+flowchart TB
+  subgraph client["🖥️  Client"]
+    FE["Next.js 15 Frontend<br/><small>App Router · Tailwind · :3000</small>"]
   end
 
-  CS[Rust / Axum<br/>Channel Service · :4000]
-  PG[(PostgreSQL<br/>Prisma)]
-  RD[(Redis<br/>counters · pub/sub)]
-  LLM{{LLM Provider · BYOK<br/>Anthropic / OpenAI / Google}}
+  subgraph edge["🌐  Edge"]
+    NGINX["nginx<br/><small>TLS · reverse proxy</small>"]
+  end
 
-  FE -->|REST + SSE| API
-  API -->|tool-use loop| LLM
-  API -->|ingest customers/orders| PG
-  API -->|AI segment → outbox in one txn| PG
-  WORK -->|claim PENDING · SKIP LOCKED| PG
-  WORK -->|POST /send batch| CS
-  CS -->|async callbacks| API
-  API -->|append CommEvent · HINCRBY| RD
-  API -->|attribute orders · 7-day window| PG
-  RD -->|snapshot + deltas| API
-  API -->|SSE live counters · insights| FE
+  subgraph backend["⚙️  Backend — Express 4 / tsx"]
+    API["API Server<br/><small>src/index.ts · :3001</small>"]
+    WORK["Outbox Poller Worker<br/><small>src/worker/poller.ts</small>"]
+  end
+
+  CS["🦀  Channel Service<br/><small>Rust / Axum · :4000</small>"]
+
+  subgraph data["💾  Datastores (managed)"]
+    PG[("PostgreSQL<br/><small>Prisma · system of record</small>")]
+    RD[("Redis<br/><small>counters · pub/sub</small>")]
+  end
+
+  LLM{{"LLM Provider · BYOK<br/><small>Anthropic · OpenAI · Google</small>"}}
+
+  FE -->|"HTTPS"| NGINX
+  NGINX -->|"/api · /health"| API
+  NGINX -->|"/"| FE
+
+  API -->|"tool-use loop"| LLM
+  API -->|"ingest customers / orders"| PG
+  API -->|"AI segment → outbox<br/>(one transaction)"| PG
+  API -->|"attribute orders · 7-day window"| PG
+
+  WORK -->|"claim PENDING<br/>FOR UPDATE SKIP LOCKED"| PG
+  WORK -->|"POST /send (batch 50)"| CS
+  CS -->|"async callbacks<br/>delivered / opened / clicked / failed"| API
+
+  API -->|"append CommEvent · HINCRBY"| RD
+  RD -->|"snapshot + deltas"| API
+  API -->|"SSE live counters · insights"| FE
+
+  classDef store fill:#1e293b,stroke:#475569,color:#e2e8f0;
+  classDef svc fill:#312e81,stroke:#6366f1,color:#e0e7ff;
+  class PG,RD store;
+  class API,WORK,CS,FE svc;
 ```
 
-**The loop:** ingest → AI segment → outbox → worker → Rust channel-service → callback →
-receipts → attribution → insights.
+**The end-to-end loop:** `ingest → AI segment → outbox → worker → Rust channel-service →
+callback → receipts → attribution → insights`.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design.
+Two design patterns make the send path reliable: a **transactional outbox** (campaign rows
+and send-intents committed atomically, a separate worker does the HTTP) and an
+**append-only event log with monotonic max-rank** receipt handling (out-of-order, duplicate,
+and late callbacks are all safe). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the
+full design.
+
+### Components
+
+| Component | Stack | Port | Role |
+|---|---|---|---|
+| **Frontend** ([`frontend/`](frontend/)) | Next.js 15 · Tailwind · React 19 | 3000 | Dashboard, AI agent chat, live campaign stats |
+| **Backend API** ([`backend/`](backend/)) | Express 4 · TypeScript · Prisma | 3001 | REST + SSE, AI agent tool layer, ingestion |
+| **Poller worker** ([`backend/`](backend/)) | same image, worker entrypoint | — | Drains the transactional outbox → channel service |
+| **Channel service** ([`channel-service/`](channel-service/)) | Rust · Axum · Tokio | 4000 | Stubbed multi-channel delivery + async callbacks |
+| **PostgreSQL** | managed (Neon) | 5432 | System of record |
+| **Redis** | managed | 6379 | Live counters + SSE pub/sub |
 
 ## Quickstart
 
@@ -55,11 +119,11 @@ Requires Docker, Node.js 20+, and a Rust toolchain.
 
 ```bash
 # 0. Environment — root .env is consumed by docker-compose (optional server-side AI key)
-cp .env.example .env                       # set ANTHROPIC_API_KEY if you want a default
-cp backend/.env.example backend/.env       # DATABASE_URL, REDIS_URL, CHANNEL_SERVICE_URL
-cp frontend/.env.example frontend/.env.local   # NEXT_PUBLIC_API_URL=http://localhost:3001
+cp .env.example .env                            # set ANTHROPIC_API_KEY for a default (optional)
+cp backend/.env.example backend/.env            # DATABASE_URL, REDIS_URL, CHANNEL_SERVICE_URL
+cp frontend/.env.example frontend/.env.local    # NEXT_PUBLIC_API_URL=http://localhost:3001
 
-# 1. Infra — Postgres + Redis (and optionally the whole stack)
+# 1. Infra — Postgres + Redis
 docker compose up -d postgres redis
 
 # 2. Backend deps, Prisma client, migrate + seed (2,000 customers, 8,000 orders)
@@ -70,31 +134,38 @@ npm run db:migrate
 npm run db:seed
 cd ..
 
-# 3. Run all three services (separate terminals)
-#    a) Backend API server
-cd backend && npm run dev            # :3001
-#    b) Outbox poller worker
-cd backend && npm run worker         # background sender
-#    c) Rust channel service
-cd channel-service && cargo run --release   # :4000
-#    d) Frontend
-cd frontend && npm install && npm run dev   # :3000
+# 3. Run all services (separate terminals)
+cd backend && npm run dev                       # a) API server      :3001
+cd backend && npm run worker                    # b) Outbox poller   (background)
+cd channel-service && cargo run --release       # c) Channel service :4000
+cd frontend && npm install && npm run dev       # d) Frontend        :3000
 ```
 
-Prefer one command? `./setup.sh` runs steps 1–2 and builds the Rust service; or bring up the
-entire stack (API, poller, channel-service, frontend, one-shot migrate+seed) with
+Prefer one command? `./setup.sh` runs steps 1–2 and builds the Rust service; or bring the
+**entire stack** (API, poller, channel-service, frontend, one-shot migrate + seed) up with
 `docker compose up`.
 
 > **BYOK:** no server-side LLM key is required — users paste their own Anthropic / OpenAI /
-> Google key in the UI Settings panel. Without any key, all insight/narrative surfaces fall
+> Google key in the UI Settings panel. Without any key, all insight / narrative surfaces fall
 > back to data-grounded (non-fabricated) content.
 
-## Docs
+## Deployment
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — overview, stack, data model, send/receipt
-  loop, AI agent layer, ingestion.
-- [`docs/TRADEOFFS.md`](docs/TRADEOFFS.md) — design decisions and at-scale evolution.
-- [`docs/VERIFICATION.md`](docs/VERIFICATION.md) — reviewer acceptance checklist.
-- [`DEPLOY.md`](DEPLOY.md) — deployment (Docker Compose / Railway / Render).
-- [`docs/xeno-postman-collection.json`](docs/xeno-postman-collection.json) — API collection.
-```
+Production runs on a single host with five containers behind nginx + Let's Encrypt, using
+**managed Postgres and Redis**. CI builds and tests all three services; a deploy workflow
+SSHes in, pulls, rebuilds, applies migrations (never re-seeds), and health-checks.
+
+- [`DEPLOY.md`](DEPLOY.md) — deployment guide (Docker Compose / Railway / Render).
+- [`docker-compose.prod.yml`](docker-compose.prod.yml) — production stack (managed datastores).
+- [`.github/workflows/`](.github/workflows/) — CI + deploy pipelines.
+
+## Documentation
+
+| Doc | Contents |
+|---|---|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Full design — stack, data model, send/receipt loop, AI agent layer, ingestion |
+| [`docs/TRADEOFFS.md`](docs/TRADEOFFS.md) | Design decisions and at-scale evolution |
+| [`docs/VERIFICATION.md`](docs/VERIFICATION.md) | Reviewer acceptance checklist |
+| [`backend/README.md`](backend/README.md) | Backend service — structure, routes, two-process topology |
+| [`frontend/README.md`](frontend/README.md) | Frontend app — pages, components, data flow |
+| [`docs/xeno-postman-collection.json`](docs/xeno-postman-collection.json) | API collection |

@@ -11,8 +11,28 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://xeno.ansht.tech"),
   title: "Xeno CRM",
   description: "AI-native Mini CRM",
+  icons: {
+    icon: "/xeno-favicon.png",
+    shortcut: "/xeno-favicon.png",
+    apple: "/xeno-favicon.png",
+  },
+  openGraph: {
+    title: "Xeno CRM",
+    description: "AI-native Mini CRM",
+    url: "https://xeno.ansht.tech",
+    siteName: "Xeno CRM",
+    images: [{ url: "/banner.png", width: 1280, height: 720, alt: "Xeno CRM" }],
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Xeno CRM",
+    description: "AI-native Mini CRM",
+    images: ["/banner.png"],
+  },
 };
 
 export default function RootLayout({
