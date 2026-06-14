@@ -379,9 +379,9 @@ export function DocsPage() {
             <Section id="architecture">
               <H2>Architecture</H2>
               <Lead>
-                Three runtimes, two managed datastores. The backend is Express 4 (TypeScript via{" "}
+                Three runtimes, two managed datastores. The backend is Express 5 (TypeScript via{" "}
                 <Code>tsx</Code>) split into two processes. The channel service is Rust / Axum.
-                The frontend is Next.js 15. PostgreSQL is the system of record; Redis holds live
+                The frontend is Next.js 16. PostgreSQL is the system of record; Redis holds live
                 counters and SSE pub/sub.
               </Lead>
               <ArchDiagram />
@@ -389,8 +389,8 @@ export function DocsPage() {
               <Table
                 headers={["Service", "Directory", "Port", "Runtime", "Role"]}
                 rows={[
-                  ["Frontend",             "frontend/",        "3000", "Next.js 15",          "Dashboard, AI agent chat, live campaign stats"],
-                  ["Backend API",          "backend/",         "3001", "Express 4 · tsx",      "REST + SSE, AI agent tool layer, ingestion"],
+                  ["Frontend",             "frontend/",        "3000", "Next.js 16",          "Dashboard, AI agent chat, live campaign stats"],
+                  ["Backend API",          "backend/",         "3001", "Express 5 · tsx",      "REST + SSE, AI agent tool layer, ingestion"],
                   ["Outbox Poller Worker", "backend/",         "—",    "Node.js (same image)", "Drains transactional outbox → channel service"],
                   ["Channel Service",      "channel-service/", "4000", "Rust · Axum · Tokio",  "Stubbed multi-channel delivery + async callbacks"],
                   ["PostgreSQL",           "managed (Neon)",   "5432", "PostgreSQL",           "System of record — all persistent state"],
@@ -416,12 +416,12 @@ export function DocsPage() {
               <Table
                 headers={["Layer", "Technology", "Why"]}
                 rows={[
-                  ["Backend API",       "Express 4 + TypeScript (tsx)",      "Pure API service — lighter than Next.js, SSE + pg_notify need always-on Node process"],
+                  ["Backend API",       "Express 5 + TypeScript (tsx)",      "Pure API service — lighter than Next.js, SSE + pg_notify need always-on Node process"],
                   ["Channel Service",   "Rust · Axum · Tokio",               "Separate process/container mirrors real provider boundary. Compile-time type safety for channel state machine"],
-                  ["Database",          "PostgreSQL via Prisma",              "Segmentation filters are relational queries with orders.* joins, JSON path, and subqueries"],
+                  ["Database",          "PostgreSQL via Prisma 6",            "Segmentation filters are relational queries with orders.* joins, JSON path, and subqueries"],
                   ["Cache / Pub-Sub",   "Redis (ioredis)",                   "O(1) hot-path reads for live campaign counters; pub/sub for SSE fan-out"],
                   ["AI Layer",          "Anthropic · OpenAI · Google (BYOK)", "Three providers behind shared LLMProvider interface. Credentials in HTTP headers, never persisted"],
-                  ["Frontend",          "Next.js 15 · Tailwind · React 19",  "App Router for RSC; talks to Express backend via NEXT_PUBLIC_API_URL"],
+                  ["Frontend",          "Next.js 16 · Tailwind 4 · React 19","App Router for RSC; talks to Express backend via NEXT_PUBLIC_API_URL"],
                   ["ORM",               "Prisma 6",                          "Migrations, typed queries, createMany with skipDuplicates for idempotent ingest"],
                   ["Validation",        "Zod 4",                             "Per-row validation on bulk ingest; single bad row never fails the batch"],
                 ]}

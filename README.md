@@ -10,9 +10,9 @@
 
 <p align="center">
   <a href="https://xeno.ansht.tech"><img src="https://img.shields.io/badge/live-xeno.ansht.tech-7c3aed?style=flat-square" alt="Live demo" /></a>
-  <img src="https://img.shields.io/badge/backend-Express%204%20%C2%B7%20TypeScript-3178c6?style=flat-square" alt="Backend" />
+  <img src="https://img.shields.io/badge/backend-Express%205%20%C2%B7%20TypeScript-3178c6?style=flat-square" alt="Backend" />
   <img src="https://img.shields.io/badge/channel-Rust%20%C2%B7%20Axum-dea584?style=flat-square" alt="Channel service" />
-  <img src="https://img.shields.io/badge/frontend-Next.js%2015-000000?style=flat-square" alt="Frontend" />
+  <img src="https://img.shields.io/badge/frontend-Next.js%2016-000000?style=flat-square" alt="Frontend" />
 </p>
 
 ---
@@ -41,22 +41,22 @@ insights  ←  attribution  ←  receipts  ←  ◀─────────�
 
 ## Architecture
 
-Three runtimes, two managed datastores, BYOK LLM. The backend is **Express 4 (TypeScript via
+Three runtimes, two managed datastores, BYOK LLM. The backend is **Express 5 (TypeScript via
 `tsx`)** split into two processes — an API server and a standalone outbox poller worker. The
-channel service is **Rust / Axum**. The frontend is **Next.js 15**. PostgreSQL (via Prisma)
+channel service is **Rust / Axum**. The frontend is **Next.js 16**. PostgreSQL (via Prisma)
 is the system of record; Redis holds live campaign counters and the SSE pub/sub fan-out.
 
 ```mermaid
 flowchart TB
   subgraph client["🖥️  Client"]
-    FE["Next.js 15 Frontend<br/><small>App Router · Tailwind · :3000</small>"]
+    FE["Next.js 16 Frontend<br/><small>App Router · Tailwind · :3000</small>"]
   end
 
   subgraph edge["🌐  Edge"]
     NGINX["nginx<br/><small>TLS · reverse proxy</small>"]
   end
 
-  subgraph backend["⚙️  Backend — Express 4 / tsx"]
+  subgraph backend["⚙️  Backend — Express 5 / tsx"]
     API["API Server<br/><small>src/index.ts · :3001</small>"]
     WORK["Outbox Poller Worker<br/><small>src/worker/poller.ts</small>"]
   end
@@ -106,8 +106,8 @@ full design.
 
 | Component | Stack | Port | Role |
 |---|---|---|---|
-| **Frontend** ([`frontend/`](frontend/)) | Next.js 15 · Tailwind · React 19 | 3000 | Dashboard, AI agent chat, live campaign stats |
-| **Backend API** ([`backend/`](backend/)) | Express 4 · TypeScript · Prisma | 3001 | REST + SSE, AI agent tool layer, ingestion |
+| **Frontend** ([`frontend/`](frontend/)) | Next.js 16 · Tailwind · React 19 | 3000 | Dashboard, AI agent chat, live campaign stats |
+| **Backend API** ([`backend/`](backend/)) | Express 5 · TypeScript · Prisma | 3001 | REST + SSE, AI agent tool layer, ingestion |
 | **Poller worker** ([`backend/`](backend/)) | same image, worker entrypoint | — | Drains the transactional outbox → channel service |
 | **Channel service** ([`channel-service/`](channel-service/)) | Rust · Axum · Tokio | 4000 | Stubbed multi-channel delivery + async callbacks |
 | **PostgreSQL** | managed (Neon) | 5432 | System of record |
@@ -165,7 +165,6 @@ SSHes in, pulls, rebuilds, applies migrations (never re-seeds), and health-check
 |---|---|
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Full design — stack, data model, send/receipt loop, AI agent layer, ingestion |
 | [`docs/TRADEOFFS.md`](docs/TRADEOFFS.md) | Design decisions and at-scale evolution |
-| [`docs/VERIFICATION.md`](docs/VERIFICATION.md) | Reviewer acceptance checklist |
 | [`backend/README.md`](backend/README.md) | Backend service — structure, routes, two-process topology |
 | [`frontend/README.md`](frontend/README.md) | Frontend app — pages, components, data flow |
 | [`docs/xeno-postman-collection.json`](docs/xeno-postman-collection.json) | API collection |

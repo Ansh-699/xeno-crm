@@ -1,6 +1,6 @@
 # Frontend — Xeno CRM
 
-Next.js 15 (App Router) dashboard for Xeno CRM, styled with Tailwind CSS. It is a pure
+Next.js 16 (App Router) dashboard for Xeno CRM, styled with Tailwind CSS 4. It is a pure
 client of the Express backend — there is **no Next.js API-route backend code**. All data
 flows over REST + SSE through a thin `lib/api.ts` wrapper. LLM credentials are **BYOK**: the
 user's key lives in `localStorage` and is attached as request headers, never sent to or
@@ -89,4 +89,4 @@ npm run build && npm run start       # production build (standalone)
 
 ## Stack
 
-Next.js 15 (App Router) · React 19 · Tailwind CSS 3 · TypeScript 5 · lucide-react · three.js.
+Next.js 16 (App Router) · React 19 · Tailwind CSS 4 · TypeScript 6 · lucide-react · three.js.

@@ -4,7 +4,7 @@ This document is the single source of truth for how Xeno CRM is built: the produ
 scope, the technology stack, the data model, the send/receipt loop, the AI agent layer,
 and the ingestion pipeline. For deployment see [`../DEPLOY.md`](../DEPLOY.md); for design
 rationale and scale notes see [`TRADEOFFS.md`](TRADEOFFS.md); for the reviewer acceptance
-checklist see [`VERIFICATION.md`](VERIFICATION.md).
+checklist see [`TRADEOFFS.md`](TRADEOFFS.md).
 
 ---
 
@@ -52,10 +52,10 @@ months, with realistic behavioural patterns (loyalists, regulars, at-risk, new, 
 ```mermaid
 flowchart LR
   subgraph Client
-    FE[Next.js 14 Frontend<br/>port 3000]
+    FE[Next.js 16 Frontend<br/>port 3000]
   end
 
-  subgraph Backend[Backend — Express 4 / tsx]
+  subgraph Backend[Backend — Express 5 / tsx]
     API[API Server<br/>src/index.ts · port 3001]
     WORK[Outbox Poller Worker<br/>src/worker/poller.ts]
   end
@@ -89,9 +89,9 @@ callback → receipts → attribution → insights.**
 
 ## 2. Stack
 
-### CRM Backend — Express 4 REST API (TypeScript / tsx)
+### CRM Backend — Express 5 REST API (TypeScript / tsx)
 
-- **Framework:** [Express 4](https://expressjs.com/) with TypeScript, run via `tsx`
+- **Framework:** [Express 5](https://expressjs.com/) with TypeScript, run via `tsx`
   (no compilation step in dev).
 - **Entry points:** two separate Node.js processes started from the same `backend/`
   directory:
@@ -106,7 +106,7 @@ callback → receipts → attribution → insights.**
   incompatible with serverless/edge runtimes.
 - **ORM:** Prisma (PostgreSQL driver), migrations in `backend/prisma/migrations/`.
 
-> **Note:** the frontend is Next.js 14 (see below). The *backend* is **not** Next.js.
+> **Note:** the frontend is Next.js 16 (see below). The *backend* is **not** Next.js.
 
 ### Channel Service — Rust / Axum
 
@@ -140,9 +140,9 @@ Counters are a materialised view — rebuildable from `CommEvent` rows on worker
 - **Fallback:** every insight/brief/narrative surface returns data-grounded, non-fabricated
   content when no key is configured.
 
-### Frontend — Next.js 14
+### Frontend — Next.js 16
 
-- **Framework:** Next.js 14 App Router; **styling:** Tailwind CSS.
+- **Framework:** Next.js 16 App Router; **styling:** Tailwind CSS 4.
 - **Why Next.js for the frontend only:** the UI benefits from React Server Components and
   static generation. It talks to the Express backend via `NEXT_PUBLIC_API_URL`. There is no
   Next.js API-route backend code.

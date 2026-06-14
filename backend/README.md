@@ -1,6 +1,6 @@
 # Backend — Xeno CRM
 
-Express 4 REST + SSE API for Xeno CRM, written in TypeScript and run directly with `tsx`
+Express 5 REST + SSE API for Xeno CRM, written in TypeScript and run directly with `tsx`
 (no build step). Prisma is the ORM over PostgreSQL; Redis holds live campaign counters and
 the SSE pub/sub fan-out. The same codebase runs as **two processes**: the API server and a
 standalone outbox poller worker.
@@ -103,5 +103,5 @@ npm test                     # vitest
 
 ## Stack
 
-Express 4 · TypeScript · `tsx` · Prisma 6 · PostgreSQL · ioredis · zod 4 ·
+Express 5 · TypeScript · `tsx` · Prisma 6 · PostgreSQL · ioredis · Zod 4 ·
 `@anthropic-ai/sdk` / `openai` / `@google/generative-ai` · vitest.
