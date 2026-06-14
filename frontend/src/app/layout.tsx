@@ -14,17 +14,14 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://xeno.ansht.tech"),
   title: "Xeno CRM",
   description: "AI-native Mini CRM",
-  icons: {
-    icon: "/xeno-favicon.png",
-    shortcut: "/xeno-favicon.png",
-    apple: "/xeno-favicon.png",
-  },
+  // Favicon set is auto-linked by Next.js from src/app/{favicon.ico,icon.png,apple-icon.png}.
+  // No manual `icons` block needed.
   openGraph: {
     title: "Xeno CRM",
     description: "AI-native Mini CRM",
     url: "https://xeno.ansht.tech",
     siteName: "Xeno CRM",
-    images: [{ url: "/banner.png", width: 1280, height: 720, alt: "Xeno CRM" }],
+    images: [{ url: "/banner.png", width: 1672, height: 941, alt: "Xeno CRM" }],
     type: "website",
   },
   twitter: {

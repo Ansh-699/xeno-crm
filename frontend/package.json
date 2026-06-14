@@ -6,16 +6,22 @@
     "dev": "next dev --port 3000",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "studio": "remotion studio remotion/index.ts",
+    "render:intro": "remotion render remotion/index.ts XenoIntro out/xeno-intro.mp4",
+    "gen:assets": "node scripts/gen-assets.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.5",
+    "@remotion/cli": "4.0.477",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.18.0",
+    "motion": "12.40.0",
     "next": "^16.2.9",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "remotion": "4.0.477",
     "tailwind-merge": "^3.6.0",
     "three": "^0.184.0"
   },
