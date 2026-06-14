@@ -4,8 +4,20 @@ import { useEffect, useState, useRef } from "react";
 import { apiFetch } from "@/lib/api";
 import {
   Upload, Search, X, Heart, ShieldAlert, Sparkles, UserCheck,
-  Users, IndianRupee, UserX, Mail, Phone,
+  Users, IndianRupee, UserX, Mail, Phone, Info,
 } from "lucide-react";
+
+// Column names accepted by the CSV importer (must match the backend aliases in
+// backend/src/routes/customers.ts → CUSTOMER_FIELD_ALIASES). Shown as an import
+// hint so users name their CSV headers correctly.
+const CSV_COLUMNS: { field: string; aliases: string; required?: boolean }[] = [
+  { field: "name", aliases: "name, full_name, customer_name, company, business", required: true },
+  { field: "email", aliases: "email, email_address, e_mail" },
+  { field: "phone", aliases: "phone, mobile, phone_number, contact_number" },
+  { field: "city", aliases: "city, location, town, region" },
+  { field: "optedOut", aliases: "opted_out, unsubscribe, marketing_opt_out, consent" },
+  { field: "attributes", aliases: "attributes, metadata, meta, details (JSON)" },
+];
 
 interface CustomerEnriched {
   id: string;
@@ -225,11 +237,36 @@ export default function CustomersPage() {
               </button>
             )}
           </div>
-          <label className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 text-sm font-bold uppercase tracking-wider cursor-pointer hover:opacity-90 transition-all shadow-sm">
-            <Upload className="h-4 w-4" />
-            {importing ? "Importing..." : "Import CSV"}
-            <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleCSVUpload} />
-          </label>
+          <div className="relative group">
+            <label className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 text-sm font-bold uppercase tracking-wider cursor-pointer hover:opacity-90 transition-all shadow-sm">
+              <Upload className="h-4 w-4" />
+              {importing ? "Importing..." : "Import CSV"}
+              <Info className="h-3.5 w-3.5 opacity-60" />
+              <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleCSVUpload} />
+            </label>
+
+            {/* Column hint — appears on hover so users match their headers */}
+            <div className="absolute right-0 top-full mt-2 w-80 z-20 hidden group-hover:block">
+              <div className="rounded-xl border border-border bg-card p-4 shadow-xl text-left normal-case">
+                <p className="text-xs font-semibold text-foreground mb-1">CSV column names</p>
+                <p className="text-[11px] text-muted-foreground mb-3">
+                  Your header row should include at least one of these. Names are matched
+                  case-insensitively (spaces &amp; underscores ignored).
+                </p>
+                <ul className="space-y-1.5">
+                  {CSV_COLUMNS.map((c) => (
+                    <li key={c.field} className="text-[11px] leading-snug">
+                      <span className="font-mono font-semibold text-foreground">{c.field}</span>
+                      {c.required && (
+                        <span className="ml-1.5 text-[9px] font-bold uppercase text-amber-600 dark:text-amber-400">required</span>
+                      )}
+                      <span className="block text-muted-foreground">{c.aliases}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

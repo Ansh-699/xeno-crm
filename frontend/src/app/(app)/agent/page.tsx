@@ -288,13 +288,13 @@ function AgentContent() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowSettings(true)}
-            className="px-3 py-1.5 rounded-lg bg-zinc-800 text-xs font-medium hover:bg-zinc-700 transition-colors"
+            className="px-3 py-1.5 rounded-lg bg-muted text-foreground text-xs font-medium hover:bg-accent transition-colors"
           >
             Settings
           </button>
           <button
             onClick={newConversation}
-            className="px-3 py-1.5 rounded-lg bg-zinc-800 text-xs font-medium hover:bg-zinc-700 transition-colors"
+            className="px-3 py-1.5 rounded-lg bg-muted text-foreground text-xs font-medium hover:bg-accent transition-colors"
           >
             New Conversation
           </button>
@@ -304,13 +304,13 @@ function AgentContent() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin space-y-4 pb-4">
         {/* No-credentials banner — shown until the user configures an API key */}
         {!credentialsOk && (
-          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg bg-amber-950/30 border border-amber-800/40 text-amber-300 text-xs">
+          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-700 dark:bg-amber-950/30 dark:border-amber-800/40 dark:text-amber-300 text-xs">
             <Key className="h-3.5 w-3.5 flex-shrink-0" />
             <span>
               ⚙️ Set your API key in{" "}
               <button
                 onClick={() => setShowSettings(true)}
-                className="underline underline-offset-2 hover:text-amber-200 transition-colors"
+                className="underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-200 transition-colors"
               >
                 Settings
               </button>{" "}
@@ -320,7 +320,7 @@ function AgentContent() {
         )}
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center">
-            <Bot className="h-12 w-12 text-zinc-700 mb-4" />
+            <Bot className="h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-muted-foreground text-lg">What would you like to do?</p>
             <p className="text-muted-foreground text-sm mt-2 max-w-md">
               Try: "Create a segment of customers in Mumbai who spent over 5000" or
@@ -357,12 +357,12 @@ function AgentContent() {
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
             placeholder={awaitingConfirmation ? "Approve or reject the action above..." : "Describe what you want to do..."}
             disabled={streaming || awaitingConfirmation}
-            className="flex-1 px-4 py-3 rounded-xl bg-card border border-border text-sm text-zinc-200 placeholder:text-muted-foreground focus:outline-none focus:border-zinc-600 disabled:opacity-50"
+            className="flex-1 px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600 disabled:opacity-50"
           />
           <button
             onClick={sendMessage}
             disabled={!input.trim() || streaming || awaitingConfirmation}
-            className="p-3 rounded-xl bg-white text-black hover:bg-zinc-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="p-3 rounded-xl bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
             <Send className="h-4 w-4" />
           </button>
@@ -386,10 +386,10 @@ function MessageBubble({
   if (message.role === "user") {
     return (
       <div className="flex items-start gap-3 justify-end">
-        <div className="max-w-[70%] rounded-xl bg-white text-black px-4 py-3 text-sm">
+        <div className="max-w-[70%] rounded-xl bg-primary text-primary-foreground px-4 py-3 text-sm">
           {message.content}
         </div>
-        <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center flex-shrink-0">
+        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
           <User className="h-4 w-4 text-muted-foreground" />
         </div>
       </div>
@@ -402,7 +402,7 @@ function MessageBubble({
         {message.toolUse && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground bg-card/50 border border-border rounded-lg px-3 py-2">
             <Wrench className="h-3.5 w-3.5 text-amber-400" />
-            <span className="font-medium text-zinc-300">{message.toolUse.name}</span>
+            <span className="font-medium text-foreground">{message.toolUse.name}</span>
             <span className="text-muted-foreground">
               {JSON.stringify(message.toolUse.input).slice(0, 100)}
               {JSON.stringify(message.toolUse.input).length > 100 ? "..." : ""}
@@ -419,12 +419,12 @@ function MessageBubble({
   if (message.isConfirmation && message.confirmationData) {
     return (
       <div className="flex items-start gap-3">
-        <div className="w-8 h-8 rounded-full bg-amber-900/30 flex items-center justify-center flex-shrink-0">
-          <AlertTriangle className="h-4 w-4 text-amber-400" />
+        <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
         </div>
-        <div className="rounded-xl border border-amber-800/50 bg-amber-950/30 px-4 py-3 max-w-[70%]">
-          <p className="text-sm font-medium text-amber-200 mb-2">Confirmation Required</p>
-          <p className="text-sm text-zinc-300 mb-1">
+        <div className="rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-800/50 dark:bg-amber-950/30 px-4 py-3 max-w-[70%]">
+          <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-2">Confirmation Required</p>
+          <p className="text-sm text-foreground mb-1">
             {message.confirmationData.toolName === "launch_campaign"
               ? "Launch this campaign to the selected segment?"
               : `Run "${message.confirmationData.toolName}"?`}
@@ -436,14 +436,14 @@ function MessageBubble({
             <div className="flex items-center gap-2">
               <button
                 onClick={onConfirm}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-900/50 text-emerald-300 text-xs font-medium hover:bg-emerald-900/70 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/50 dark:text-emerald-300 dark:hover:bg-emerald-900/70 text-xs font-medium transition-colors"
               >
                 <CheckCircle className="h-3.5 w-3.5" />
                 Approve
               </button>
               <button
                 onClick={onReject}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-900/50 text-red-300 text-xs font-medium hover:bg-red-900/70 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-300 dark:hover:bg-red-900/70 text-xs font-medium transition-colors"
               >
                 <XCircle className="h-3.5 w-3.5" />
                 Reject
@@ -462,7 +462,7 @@ function MessageBubble({
       <div className="w-8 h-8 rounded-full bg-violet-900/30 flex items-center justify-center flex-shrink-0">
         <Bot className="h-4 w-4 text-violet-400" />
       </div>
-      <div className="max-w-[70%] rounded-xl bg-card border border-border px-4 py-3 text-sm text-zinc-200 whitespace-pre-wrap">
+      <div className="max-w-[70%] rounded-xl bg-card border border-border px-4 py-3 text-sm text-foreground whitespace-pre-wrap">
         {message.content}
       </div>
     </div>
@@ -491,7 +491,7 @@ function ToolResultDisplay({ name, output }: { name: string; output: any }) {
         className="w-full flex items-center gap-2 px-3 py-2 bg-card/30 hover:bg-card/60 transition-colors text-left"
       >
         <CheckCircle className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0" />
-        <span className="text-zinc-300 font-medium">{name}</span>
+        <span className="text-foreground font-medium">{name}</span>
         {summary && <span className="text-muted-foreground truncate ml-1">— {summary}</span>}
       </button>
       {expanded && (

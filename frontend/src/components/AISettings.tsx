@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Settings, X, Key } from "lucide-react";
 
 const PROVIDERS = [
@@ -25,8 +26,14 @@ export function getAISettings(): AISettingsData {
 export function AISettingsPanel({ onClose }: { onClose: () => void }) {
   const [s, setS] = useState<AISettingsData>({ provider: "anthropic", apiKey: "", model: "" });
   const [saved, setSaved] = useState(false);
+  // Render into <body> via a portal so the modal is positioned relative to the
+  // viewport. Mounting it inside the sidebar (which uses `transition-transform`)
+  // would re-base `position: fixed` to the transformed ancestor and pin the
+  // modal to the left rail instead of centering it.
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => setS(getAISettings()), []);
+  useEffect(() => setMounted(true), []);
 
   const save = () => {
     localStorage.setItem("xeno.ai", JSON.stringify(s));
@@ -34,9 +41,14 @@ export function AISettingsPanel({ onClose }: { onClose: () => void }) {
     setTimeout(() => setSaved(false), 1500);
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div
+        className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-2">
             <Key className="h-4 w-4 text-violet-400" />
@@ -91,7 +103,8 @@ export function AISettingsPanel({ onClose }: { onClose: () => void }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
