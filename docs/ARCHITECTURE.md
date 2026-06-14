@@ -52,34 +52,34 @@ months, with realistic behavioural patterns (loyalists, regulars, at-risk, new, 
 ```mermaid
 flowchart LR
   subgraph Client
-    FE[Next.js 16 Frontend<br/>port 3000]
+    FE["Next.js 16 Frontend\nport 3000"]
   end
 
-  subgraph Backend[Backend — Express 5 / tsx]
-    API[API Server<br/>src/index.ts · port 3001]
-    WORK[Outbox Poller Worker<br/>src/worker/poller.ts]
+  subgraph Backend["Backend — Express 5 / tsx"]
+    API["API Server\nsrc/index.ts · port 3001"]
+    WORK["Outbox Poller Worker\nsrc/worker/poller.ts"]
   end
 
-  CS[Rust / Axum<br/>Channel Service · port 4000]
+  CS["Channel Service\nRust / Axum · port 4000"]
 
   subgraph Data
-    PG[(PostgreSQL<br/>Prisma)]
-    RD[(Redis<br/>counters · pub/sub)]
+    PG[("PostgreSQL\nPrisma")]
+    RD[("Redis\ncounters · pub/sub")]
   end
 
   FE -->|REST + SSE| API
-  API -->|tool-use loop| LLM{{LLM Provider<br/>Anthropic / OpenAI / Google · BYOK}}
+  API -->|tool-use loop| LLM{{LLM Provider · BYOK\nAnthropic / OpenAI / Google}}
 
-  API -->|ingest customers/orders| PG
-  API -->|AI segment → outbox in one txn| PG
-  WORK -->|claim PENDING<br/>FOR UPDATE SKIP LOCKED| PG
+  API -->|ingest customers & orders| PG
+  API -->|AI segment to outbox\none transaction| PG
+  WORK -->|claim PENDING\nFOR UPDATE SKIP LOCKED| PG
   WORK -->|POST /send batch| CS
-  CS -->|async callbacks<br/>delivered/failed/opened/read/clicked| API
-  API -->|append CommEvent · HINCRBY| RD
-  API -->|attribute orders<br/>7-day window| PG
+  CS -->|async callbacks\ndelivered · failed · opened · read · clicked| API
+  API -->|append CommEvent\nHINCRBY counters| RD
+  API -->|attribute orders\n7-day window| PG
   RD -->|snapshot + deltas| API
   API -->|SSE live counters| FE
-  API -->|insights / analytics| FE
+  API -->|insights & analytics| FE
 ```
 
 The end-to-end loop: **ingest → AI segment → outbox → worker → Rust channel-service →

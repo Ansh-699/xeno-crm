@@ -306,7 +306,7 @@ export function DocsPage() {
             <span className="text-sm font-semibold text-foreground">Xeno CRM — Docs</span>
           </div>
           <div className="flex items-center gap-3">
-            <a href="https://github.com/anshtyagi" target="_blank" rel="noopener noreferrer"
+            <a href="https://github.com/Ansh-699/xeno-crm" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
               <ExternalLink className="h-3 w-3" /> GitHub
             </a>

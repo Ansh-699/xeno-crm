@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://xeno.ansht.tech"><img src="https://img.shields.io/badge/live-xeno.ansht.tech-7c3aed?style=flat-square" alt="Live demo" /></a>
+  <a href="https://github.com/Ansh-699/xeno-crm"><img src="https://img.shields.io/badge/github-Ansh--699%2Fxeno--crm-181717?style=flat-square&logo=github" alt="GitHub" /></a>
   <img src="https://img.shields.io/badge/backend-Express%205%20%C2%B7%20TypeScript-3178c6?style=flat-square" alt="Backend" />
   <img src="https://img.shields.io/badge/channel-Rust%20%C2%B7%20Axum-dea584?style=flat-square" alt="Channel service" />
   <img src="https://img.shields.io/badge/frontend-Next.js%2016-000000?style=flat-square" alt="Frontend" />
@@ -48,49 +49,46 @@ is the system of record; Redis holds live campaign counters and the SSE pub/sub 
 
 ```mermaid
 flowchart TB
-  subgraph client["🖥️  Client"]
-    FE["Next.js 16 Frontend<br/><small>App Router · Tailwind · :3000</small>"]
+  subgraph client["Client"]
+    FE["Next.js 16 Frontend\nApp Router · Tailwind · port 3000"]
   end
 
-  subgraph edge["🌐  Edge"]
-    NGINX["nginx<br/><small>TLS · reverse proxy</small>"]
+  subgraph edge["Edge"]
+    NGINX["nginx\nTLS · reverse proxy"]
   end
 
-  subgraph backend["⚙️  Backend — Express 5 / tsx"]
-    API["API Server<br/><small>src/index.ts · :3001</small>"]
-    WORK["Outbox Poller Worker<br/><small>src/worker/poller.ts</small>"]
+  subgraph backend["Backend — Express 5 / tsx"]
+    API["API Server\nsrc/index.ts · port 3001"]
+    WORK["Outbox Poller Worker\nsrc/worker/poller.ts"]
   end
 
-  CS["🦀  Channel Service<br/><small>Rust / Axum · :4000</small>"]
+  CS["Channel Service\nRust / Axum · port 4000"]
 
-  subgraph data["💾  Datastores (managed)"]
-    PG[("PostgreSQL<br/><small>Prisma · system of record</small>")]
-    RD[("Redis<br/><small>counters · pub/sub</small>")]
+  subgraph data["Datastores — managed"]
+    PG[("PostgreSQL\nPrisma · system of record")]
+    RD[("Redis\ncounters · pub/sub")]
   end
 
-  LLM{{"LLM Provider · BYOK<br/><small>Anthropic · OpenAI · Google</small>"}}
+  LLM{{"LLM Provider · BYOK\nAnthropic · OpenAI · Google"}}
 
-  FE -->|"HTTPS"| NGINX
-  NGINX -->|"/api · /health"| API
-  NGINX -->|"/"| FE
+  FE -->|HTTPS| NGINX
+  NGINX -->|/api · /health| API
+  NGINX -->|/ static| FE
+  API -->|tool-use loop| LLM
+  API -->|ingest customers & orders| PG
+  API -->|AI segment to outbox\none transaction| PG
+  API -->|attribute orders\n7-day window| PG
+  WORK -->|claim PENDING\nFOR UPDATE SKIP LOCKED| PG
+  WORK -->|POST /send batch of 50| CS
+  CS -->|async callbacks\ndelivered · opened · clicked · failed| API
+  API -->|append CommEvent\nHINCRBY counters| RD
+  RD -->|snapshot + deltas| API
+  API -->|SSE live counters · insights| FE
 
-  API -->|"tool-use loop"| LLM
-  API -->|"ingest customers / orders"| PG
-  API -->|"AI segment → outbox<br/>(one transaction)"| PG
-  API -->|"attribute orders · 7-day window"| PG
-
-  WORK -->|"claim PENDING<br/>FOR UPDATE SKIP LOCKED"| PG
-  WORK -->|"POST /send (batch 50)"| CS
-  CS -->|"async callbacks<br/>delivered / opened / clicked / failed"| API
-
-  API -->|"append CommEvent · HINCRBY"| RD
-  RD -->|"snapshot + deltas"| API
-  API -->|"SSE live counters · insights"| FE
-
-  classDef store fill:#1e293b,stroke:#475569,color:#e2e8f0;
-  classDef svc fill:#312e81,stroke:#6366f1,color:#e0e7ff;
-  class PG,RD store;
-  class API,WORK,CS,FE svc;
+  classDef store fill:#1e293b,stroke:#475569,color:#e2e8f0
+  classDef svc fill:#312e81,stroke:#6366f1,color:#e0e7ff
+  class PG,RD store
+  class API,WORK,CS,FE svc
 ```
 
 **The end-to-end loop:** `ingest → AI segment → outbox → worker → Rust channel-service →
@@ -99,7 +97,7 @@ callback → receipts → attribution → insights`.
 Two design patterns make the send path reliable: a **transactional outbox** (campaign rows
 and send-intents committed atomically, a separate worker does the HTTP) and an
 **append-only event log with monotonic max-rank** receipt handling (out-of-order, duplicate,
-and late callbacks are all safe). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the
+and late callbacks are all safe). See the [Architecture docs](https://xeno.ansht.tech/docs/architecture) for the
 full design.
 
 ### Components
@@ -163,8 +161,8 @@ SSHes in, pulls, rebuilds, applies migrations (never re-seeds), and health-check
 
 | Doc | Contents |
 |---|---|
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Full design — stack, data model, send/receipt loop, AI agent layer, ingestion |
-| [`docs/TRADEOFFS.md`](docs/TRADEOFFS.md) | Design decisions and at-scale evolution |
-| [`backend/README.md`](backend/README.md) | Backend service — structure, routes, two-process topology |
-| [`frontend/README.md`](frontend/README.md) | Frontend app — pages, components, data flow |
-| [`docs/xeno-postman-collection.json`](docs/xeno-postman-collection.json) | API collection |
+| [Architecture](https://xeno.ansht.tech/docs/architecture) | Full design — stack, data model, send/receipt loop, AI agent layer, ingestion |
+| [Tradeoffs](https://xeno.ansht.tech/docs/tradeoffs) | Design decisions and at-scale evolution |
+| [Backend](https://xeno.ansht.tech/docs/backend) | Backend service — structure, routes, two-process topology |
+| [Frontend](https://xeno.ansht.tech/docs/frontend) | Frontend app — pages, components, data flow |
+| [API Collection](https://xeno.ansht.tech/docs/api) | API collection |
