@@ -1,6 +1,20 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* Keep the existing JS theme config (colors, fonts, radius, keyframes) under
+   Tailwind v4 instead of porting it to CSS-first @theme. */
+@config "../../tailwind.config.ts";
+
+/* Tailwind v4 defaults the global border color to currentColor; restore the v3
+   behaviour so bare `border` utilities match the prior design. */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: hsl(var(--border));
+  }
+}
 
 @layer base {
   :root {
