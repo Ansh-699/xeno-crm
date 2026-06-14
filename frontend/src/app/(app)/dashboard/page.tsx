@@ -28,6 +28,47 @@ interface AIInsight {
   priority: "high" | "medium" | "low";
 }
 
+/** Map any AI-generated href to a valid app route */
+const VALID_ROUTES: Record<string, string> = {
+  "/segments":          "/segments",
+  "/agent":             "/agent",
+  "/customers":         "/customers",
+  "/campaigns":         "/campaigns",
+  "/analytics":         "/analytics",
+  "/dashboard":         "/dashboard",
+  "/data-health":       "/customers",
+  "/data-quality":      "/customers",
+  "/data":              "/customers",
+  "/health":            "/customers",
+  "/performance":       "/analytics",
+  "/reports":           "/analytics",
+  "/insights":          "/analytics",
+  "/create-segment":    "/segments",
+  "/new-segment":       "/segments",
+  "/segments/new":      "/segments",
+  "/campaigns/new":     "/campaigns",
+  "/launch":            "/campaigns",
+  "/send":              "/campaigns",
+  "/win-back":          "/agent",
+  "/re-engage":         "/agent",
+};
+
+function sanitizeHref(href: string): string {
+  if (!href) return "/dashboard";
+  // Direct match
+  if (VALID_ROUTES[href]) return VALID_ROUTES[href];
+  // Prefix match — e.g. /segments/123 → /segments
+  const prefix = Object.keys(VALID_ROUTES).find((k) => href.startsWith(k + "/") || href === k);
+  if (prefix) return VALID_ROUTES[prefix];
+  // Last-resort: derive from keywords in the path
+  if (href.includes("segment")) return "/segments";
+  if (href.includes("campaign")) return "/campaigns";
+  if (href.includes("customer") || href.includes("data") || href.includes("health")) return "/customers";
+  if (href.includes("analytic") || href.includes("insight") || href.includes("report")) return "/analytics";
+  if (href.includes("agent")) return "/agent";
+  return "/dashboard";
+}
+
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [campaigns, setCampaigns] = useState<any[]>([]);
@@ -222,7 +263,7 @@ export default function DashboardPage() {
                   </div>
                   {insight.action && (
                     <Link
-                      href={insight.action.href}
+                      href={sanitizeHref(insight.action.href)}
                       className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-violet-500 hover:text-violet-600 transition-colors mt-auto"
                     >
                       {insight.action.label}
