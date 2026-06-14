@@ -97,7 +97,7 @@ callback → receipts → attribution → insights`.
 Two design patterns make the send path reliable: a **transactional outbox** (campaign rows
 and send-intents committed atomically, a separate worker does the HTTP) and an
 **append-only event log with monotonic max-rank** receipt handling (out-of-order, duplicate,
-and late callbacks are all safe). See the [Architecture docs](https://xeno.ansht.tech/docs/architecture) for the
+and late callbacks are all safe). See the [documentation](https://xeno.ansht.tech/docs) for the
 full design.
 
 ### Components
@@ -159,10 +159,6 @@ SSHes in, pulls, rebuilds, applies migrations (never re-seeds), and health-check
 
 ## Documentation
 
-| Doc | Contents |
-|---|---|
-| [Architecture](https://xeno.ansht.tech/docs/architecture) | Full design — stack, data model, send/receipt loop, AI agent layer, ingestion |
-| [Tradeoffs](https://xeno.ansht.tech/docs/tradeoffs) | Design decisions and at-scale evolution |
-| [Backend](https://xeno.ansht.tech/docs/backend) | Backend service — structure, routes, two-process topology |
-| [Frontend](https://xeno.ansht.tech/docs/frontend) | Frontend app — pages, components, data flow |
-| [API Collection](https://xeno.ansht.tech/docs/api) | API collection |
+For full documentation, visit **[https://xeno.ansht.tech/docs](https://xeno.ansht.tech/docs)**
+
+Includes: architecture, design tradeoffs, backend & frontend implementation, API reference.
