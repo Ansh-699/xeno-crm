@@ -383,8 +383,8 @@ const VALID_HEALTH = new Set(["loyal", "regular", "at_risk", "churning", "new"])
 
 router.get("/customer-health", async (req: Request, res: Response) => {
   try {
-    const limit = parseInt(req.query.limit as string) || 50;
-    const offset = parseInt(req.query.offset as string) || 0;
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 50), 100);
+    const offset = Math.max(0, parseInt(req.query.offset as string) || 0);
     const search = (req.query.search as string) || "";
     const healthParam = (req.query.health as string) || "all";
 

@@ -3,8 +3,11 @@ import type { LLMProvider, LLMMessage, LLMResponse, LLMToolDef } from "./types";
 
 const DEFAULT_MODEL = "claude-sonnet-4-20250514";
 
+// Cap each request so a hung provider cannot stall the agent loop / poller worker.
+const REQUEST_TIMEOUT_MS = 30_000;
+
 export function anthropicProvider(apiKey: string, model = DEFAULT_MODEL): LLMProvider {
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey, timeout: REQUEST_TIMEOUT_MS });
   return {
     async generate({ system, messages, tools, maxTokens = 4096 }): Promise<LLMResponse> {
       const resp = await client.messages.create({

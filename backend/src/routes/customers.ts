@@ -105,8 +105,8 @@ function parseAttributes(value: unknown, rowNumber: number): Prisma.InputJsonVal
 // GET /api/customers — list customers with pagination
 router.get("/", async (req: Request, res: Response) => {
   try {
-    const take = Math.min(parseInt(req.query.limit as string) || 50, 100);
-    const skip = parseInt(req.query.offset as string) || 0;
+    const take = Math.min(Math.max(1, parseInt(req.query.limit as string) || 50), 100);
+    const skip = Math.max(0, parseInt(req.query.offset as string) || 0);
     const search = (req.query.search as string) || "";
 
     const where = search

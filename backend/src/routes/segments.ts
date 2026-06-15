@@ -166,7 +166,7 @@ router.get("/:id/preview", async (req: Request, res: Response) => {
     }
 
     const where = filtersToWhere(segment.filters as any);
-    const limit = parseInt(req.query.limit as string) || 20;
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 100);
 
     const customers = await prisma.customer.findMany({
       where,

@@ -3,8 +3,11 @@ import type { LLMProvider, LLMMessage, LLMResponse } from "./types";
 
 const DEFAULT_MODEL = "gpt-4o";
 
+// Cap each request so a hung provider cannot stall the agent loop / poller worker.
+const REQUEST_TIMEOUT_MS = 30_000;
+
 export function openaiProvider(apiKey: string, model = DEFAULT_MODEL): LLMProvider {
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey, timeout: REQUEST_TIMEOUT_MS });
   return {
     async generate({ system, messages, tools, maxTokens = 4096 }): Promise<LLMResponse> {
       const oa: any[] = [{ role: "system", content: system }];
@@ -55,11 +58,17 @@ export function openaiProvider(apiKey: string, model = DEFAULT_MODEL): LLMProvid
         return { text: "", toolUses: [], stopReason: "stop" };
       }
       const msg = choice.message;
-      const toolUses = (msg.tool_calls ?? []).map((tc: any) => ({
-        id: tc.id,
-        name: tc.function.name,
-        input: JSON.parse(tc.function.arguments || "{}"),
-      }));
+      const toolUses = (msg.tool_calls ?? []).map((tc: any) => {
+        let input: any = {};
+        try {
+          input = JSON.parse(tc.function.arguments || "{}");
+        } catch {
+          // The model can emit malformed JSON for tool arguments; degrade to an
+          // empty object instead of throwing and crashing the agent loop.
+          console.error("[openai] Failed to parse tool arguments:", tc.function?.arguments);
+        }
+        return { id: tc.id, name: tc.function.name, input };
+      });
       return { text: msg.content ?? "", toolUses, stopReason: choice.finish_reason ?? "stop" };
     },
   };

@@ -3,6 +3,9 @@ import type { LLMProvider, LLMMessage, LLMResponse } from "./types";
 
 const DEFAULT_MODEL = "gemini-2.5-flash";
 
+// Cap each request so a hung provider cannot stall the agent loop / poller worker.
+const REQUEST_TIMEOUT_MS = 30_000;
+
 // Gemini's function-calling schema is a strict OpenAPI subset. It rejects JSON-Schema
 // keywords like `additionalProperties`, `$schema`, etc. Strip them recursively so the
 // same tool definitions work across Anthropic/OpenAI (which accept them) and Gemini.
@@ -67,7 +70,7 @@ export function googleProvider(apiKey: string, modelName = DEFAULT_MODEL): LLMPr
           },
         ];
       }
-      const model = genAI.getGenerativeModel(modelConfig);
+      const model = genAI.getGenerativeModel(modelConfig, { timeout: REQUEST_TIMEOUT_MS });
 
       // Map toolUseId → function name from prior assistant tool_use blocks so tool_result
       // blocks can be correlated by their real name rather than relying on the synthetic
